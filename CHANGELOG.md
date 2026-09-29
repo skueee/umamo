@@ -47,6 +47,7 @@ Umamo is early alpha.
 * UI: Buttons now use the accent color when pressed.
 * UI: Positions in the Properties panel are now measured from the world axes, and the Origin fields place those axes from the canvas's bottom-left corner.
 * UI: Before the 2D cursor is placed, the 2D Cursor pivot now turns about the world origin, the same point the cursor snaps already used, instead of the selection's median.
+* UI: Committing an edit now redraws only the panels and rows that show what changed.  Previously all spaces/areas would update.
 * UV Editor: Clicking inside a UV island in Object mode now selects it even where its texture is transparent.  Where islands overlap, the one with visible art under the cursor still wins.
 * UV Editor: Switching to another page or layer for the first time refits the camera then remembers the camera position from there on.
 * UV Editor: Fit View now also frames meshes that sit past the edge of the atlas page.
@@ -57,6 +58,10 @@ Umamo is early alpha.
 * Parameters: Clicking a parameter's name now only opens or closes its range editor; it no longer selects the parameter.
 * Parameters: In Edit Mode the parameter sliders now show the rest pose which matches the pose in edit mode.  The sliders return to their set positions after returning to object mode.
 * Keyform Sheet: Insert Key and Delete Key in Edit Mode act at the rest pose shown in the viewport.
+* Sources: Dropping art on a layer or a layer on art that row now expands to show what it is being dropped on.
+* Sources: The list now has a vertical scroll bar.
+* Sources: Checking whether artwork files are still on disk no longer runs on the UI thread.
+* Outliner, Parameters, Sources: Dragging a row now redraws only the rows the drag touches.
 
 ### Fixed
 * UI: Modal key ladder issue with escape closing the preferences window first instead of the confirmation dialog.
@@ -72,11 +77,19 @@ Umamo is early alpha.
 * Viewport: Camera fitting now falls back to the canvas bounds when there are no drawables.
 * Viewport: Changing an area between the UV Editor and the 2D Viewport no longer leaves the previous editor's contents and camera behind.
 * Outliner: A CTRL+Left Click or Shift+Left Click followed quickly by a plain click on the same row no longer opens rename.
+* Outliner: Clicking a branch's arrow during a search no longer changes its saved fold.
+* Outliner, Sources: The art thumbnail hover preview no longer flickers and blocks clicks when there is not enough room to the left or right.  It now falls back to anchoring to the pointer when it does not have enough room.
+* Outliner: A selection made in the viewport is revealed again after picking a relation from a row or after clicking the row that was already active.
+* Sources: While a search is running, accepting a proposal or relinking manually now moves every art bound to the lost layer, and clicking a layer selects every drawable over it, instead of only the ones the search lists.
+* Sources: Accepting a proposal or dragging a layer onto art now binds by the same key strength(stable or by name) as when picking from the relink list.
+* Sources: Clicking a row or its arrow during a search no longer changes its saved fold.
+* Sources: Dropping art on a layer its file lists more than once now only opens the row the art lands on.
 * Source Artwork: "Show source artwork" no longer draws layers misshaped, misplaced, and cut off on CMO3 models whose drawables use Cubism's reduced resolution texture copies.
 * Source Artwork: Reloading or relinking a layer in a CMO3 whose drawables use Cubism's reduced resolution copies now points them at the new art on export, so Cubism shows the reloaded layer instead of the stale copy.
 * Texture Atlas: Rebuilding the atlas after a reload, Replace Artwork, added artwork, or a repack no longer smears stretched pixels around art that touches the edge of its layer.
 * Texture Atlas: CMO3 models saved in Cubism with "Show source artwork" turned on now load the texture atlas as the atlas pages instead of loading every individual layer as an atlas page.
 * Viewport: Meshes that reach past the edge of their texture no longer smear the edge pixels across the overhang in the atlas display and clicking that overhang no longer selects the drawable.
+* Import: A drawable, part, deformer, parameter, or parameter group saved with an empty name now shows its ID as its name.  This applies to CMO3, MOC3, and artwork imports.  This is to prevent situations where a blank name might result in a blank control surface that can't be edited.
 * Export: A CMO3 or MOC3 export that runs out of memory or fails now shows an alert instead of a Java error that crashes the application.
 * Export: Exporting a CMO3 from a MOC3 model now uses up to 30% less memory by reusing textures from memory instead of decoding the textures again from the source.
 * Export: Exporting a CMO3 from a CMO3 model no longer changes the open document.
@@ -88,7 +101,7 @@ Umamo is early alpha.
 * Parameters: Switching to Edit Mode during a slider drag now discards the drag.
 * Parameters: A new, restored, or moved row at the top of the list is now fully visible.
 * Keyform Sheet: Scrubbing a track or clicking a key in Edit Mode no longer changes the pose.
-* Outliner: Clicking a branch's arrow during a search no longer changes its saved fold.
+* Keyform Sheet: Clicking and dragging on an unselected key when there is an active selection now properly switches the selection.  Previously it would select it after the drag finished and create weird interactions when there were multiple keys selected.
 
 ## 0.3.0-dev - 2026-09-15
 
