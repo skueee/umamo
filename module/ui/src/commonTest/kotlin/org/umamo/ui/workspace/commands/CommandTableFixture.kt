@@ -18,13 +18,13 @@ import org.umamo.ui.action.CommandRegistry
 import org.umamo.ui.model.EditorModeHandle
 import org.umamo.ui.model.SelectionHandle
 import org.umamo.ui.workspace.AreaCameraHub
-import org.umamo.ui.workspace.AreaDragController
 import org.umamo.ui.workspace.KeyformSheetViews
-import org.umamo.ui.workspace.OperationStripState
 import org.umamo.ui.workspace.ShellOverlayState
-import org.umamo.ui.workspace.SplitterDragCancelController
-import org.umamo.ui.workspace.WorkspaceLayoutController
-import org.umamo.ui.workspace.defaultLayout
+import org.umamo.ui.workspace.area.AreaDragController
+import org.umamo.ui.workspace.area.SplitterDragCancelController
+import org.umamo.ui.workspace.layout.WorkspaceLayoutController
+import org.umamo.ui.workspace.layout.defaultLayout
+import org.umamo.ui.workspace.operationstrip.OperationStripState
 import org.umamo.ui.workspace.rowdrag.RowDragCancelController
 import kotlin.test.assertEquals
 
@@ -147,10 +147,13 @@ internal fun everyCommandTable(session: EditorSession? = null): List<Command> {
 		displayCommands(session, availability) +
 		atlasCommands(availability, routing, null) +
 		fileArtworkCommands(routing) { null } +
+		fileImageExportCommands(routing) { null } +
 		keyformCommands(session, { null }, routing, sheets, availability) +
 		viewportChromeCommands(inMemorySettings()) +
 		workspaceFileCommands({}, {}, {}) +
 		logCommands {} +
 		fileCommands({}, {}, {}, {}, { true }, {}, {}, {}, {}) +
+		logFolderCommands {} +
+		updateCommands {} +
 		fileExportCommands({ true }, {}, {})
 }

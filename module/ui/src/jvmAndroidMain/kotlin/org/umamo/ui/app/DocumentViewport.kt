@@ -14,8 +14,7 @@ import org.umamo.ui.action.CommandRegistry
 import org.umamo.ui.document.Document
 import org.umamo.ui.document.PuppetDocument
 import org.umamo.ui.document.systemSourceFilePresence
-import org.umamo.ui.kit.TopLevelMenu
-import org.umamo.ui.model.DrawableThumbnailer
+import org.umamo.ui.kit.menu.TopLevelMenu
 import org.umamo.ui.model.LocalDrawableThumbnails
 import org.umamo.ui.model.LocalEditorMode
 import org.umamo.ui.model.LocalEditorSession
@@ -27,22 +26,23 @@ import org.umamo.ui.model.LocalPuppetViewportService
 import org.umamo.ui.model.LocalSelection
 import org.umamo.ui.model.LocalSessionAtlasPages
 import org.umamo.ui.model.LocalSourceArtRasters
-import org.umamo.ui.model.LocalSourceFilePresence
-import org.umamo.ui.model.LocalSourceSuggestions
-import org.umamo.ui.model.LocalSourceWatch
 import org.umamo.ui.model.SessionAtlasPages
-import org.umamo.ui.model.SourceSuggestionState
-import org.umamo.ui.model.SourceWatchState
+import org.umamo.ui.model.artwork.LocalSourceFilePresence
+import org.umamo.ui.model.artwork.LocalSourceSuggestions
+import org.umamo.ui.model.artwork.LocalSourceWatch
+import org.umamo.ui.model.artwork.SourceSuggestionState
+import org.umamo.ui.model.artwork.SourceWatchState
 import org.umamo.ui.model.rememberSessionEditorState
+import org.umamo.ui.model.thumbnails.DrawableThumbnailer
 import org.umamo.ui.rememberIntSetting
 import org.umamo.ui.settings.HistorySettings
 import org.umamo.ui.viewport.AtlasPageBinding
 import org.umamo.ui.viewport.LiveParamsAdapter
 import org.umamo.ui.viewport.PuppetViewportServiceFactory
-import org.umamo.ui.viewport.rememberPuppetViewportHost
-import org.umamo.ui.workspace.LocalAreaViewStates
-import org.umamo.ui.workspace.PersistentEditorShell
+import org.umamo.ui.viewport.viewport2d.rememberPuppetViewportHost
 import org.umamo.ui.workspace.commands.ArtworkOperations
+import org.umamo.ui.workspace.editorstate.LocalAreaViewStates
+import org.umamo.ui.workspace.shell.PersistentEditorShell
 
 /**
  * Renders the open document inside the editor shell. For a puppet document, a per-area viewport host
@@ -65,6 +65,10 @@ import org.umamo.ui.workspace.commands.ArtworkOperations
  *   with no puppet document, which hides them.
  * @param SourceWatchState? sourceWatch The document's artwork watcher's state for the Sources space, or null.
  * @param SourceSuggestionState? sourceSuggestions The published relink suggestions for the Sources space's review chips, or null.
+ * @param DocumentViewportSlot? viewportSlot Where the render service is handed to the operations that use it outside an
+ *   area (a save's cameras and thumbnail, Export Image) while it lives; null when nothing asks.
+ * @param Function? exportImage Export Image over a 2D viewport area, handed to the shell for a puppet document on a
+ *   platform with a renderer (the shell registers the command); null otherwise, which hides it.
  */
 @Composable
 internal fun DocumentViewport(
@@ -78,6 +82,8 @@ internal fun DocumentViewport(
 	artwork: ArtworkOperations?,
 	sourceWatch: SourceWatchState?,
 	sourceSuggestions: SourceSuggestionState?,
+	viewportSlot: DocumentViewportSlot? = null,
+	exportImage: ((viewportAreaId: String?) -> Unit)? = null,
 ) {
 	when (document) {
 		is PuppetDocument ->
@@ -118,15 +124,15 @@ internal fun DocumentViewport(
 					} else {
 						null
 					}
-				// A save reads every area's camera through the holder, which is where both sides already meet by
-				// area id; the reader goes when the service does, so a save never asks a disposed engine.
+				// The render service is handed to what uses it outside an area - a save's cameras and thumbnail,
+				// Export Image - while it lives, and taken back when it goes, so nothing asks a disposed engine.  A
+				// slot already refilled by a newer service is left alone.
 				val viewportService = viewport?.service
-				DisposableEffect(areaViewStates, viewportService) {
-					val reader = viewportService?.let { service -> service::cameras }
-					areaViewStates?.cameraReader = reader
+				DisposableEffect(viewportSlot, viewportService) {
+					viewportSlot?.service = viewportService
 					onDispose {
-						if (areaViewStates?.cameraReader === reader) {
-							areaViewStates?.cameraReader = null
+						if (viewportSlot?.service === viewportService) {
+							viewportSlot?.service = null
 						}
 					}
 				}
@@ -161,6 +167,7 @@ internal fun DocumentViewport(
 						appMenu = appMenu,
 						// Registered by the shell (see fileArtworkCommands): the strip shows in the hovered work surface.
 						artwork = artwork,
+						exportImage = exportImage,
 						filePicker = filePicker,
 					)
 				}

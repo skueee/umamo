@@ -521,16 +521,41 @@ class EditorSession(
 			keySelection,
 		)
 
+	/** Whether the current mode pins the pose (see [pinsPose]), which refuses every pose move asked of the session. */
+	val posePinned: Boolean get() = mutableMode.value.pinsPose
+
+	/**
+	 * The pose the editor shows, and so where an edit aimed at "the pose" acts: the rig's pose, and while it
+	 * is pinned, every parameter at its default.  Edit mode shows the rig at rest, so a key inserted "at the
+	 * pose" there lands where the rigger is looking, not at a pose that returns only when Edit mode is left.
+	 */
+	val shownPose: Pose
+		get() =
+			if (posePinned) {
+				mutableModel.value.parameters.associate { parameter -> parameter.id to parameter.default }
+			} else {
+				mutablePose.value
+			}
+
 	/**
 	 * Commits a parameter scrub as one undo step: the live [pose] reached a new resting position (a slider
 	 * or 2D-pad gesture released, a value typed, a reset). Mid-gesture preview frames bypass this and reach
 	 * the renderer directly, so a whole drag is a single step. The model is unchanged, so this does not
 	 * mark the document dirty. A commit equal to the current pose records nothing.
 	 *
+	 * Refused while the pose is pinned ([posePinned]), whoever asks.  The refusal is here rather than left
+	 * to each caller because of what a caller has to hand over: in Edit mode the pose a view holds is the
+	 * rest pose it is being shown, which names no parameter, and recording that as the rig's pose would
+	 * drop every value the rig held.  A document edit that has to move the pose with it - a range
+	 * narrowed under the value - does not come through here, and is not refused.
+	 *
 	 * @param Change change The scrub descriptor (a [ParameterChange.SetValue]).
 	 * @param Pose pose The pose to commit (the gesture's final parameter values).
 	 */
 	fun commitPose(change: Change, pose: Pose) {
+		if (posePinned) {
+			return
+		}
 		commit(change, mutableModel.value, pose)
 	}
 
@@ -895,10 +920,14 @@ class EditorSession(
 	 * exists rather than staging the selection and letting a pose commit carry it: the pose commit
 	 * short-circuits on an unchanged pose, and the selection would then vanish from history entirely.
 	 *
+	 * While the pose is pinned ([posePinned]) the click selects and the pose stays: selecting a key is a
+	 * selection, which Edit mode allows, and landing on it is a pose move, which it does not.
+	 *
 	 * @param Set<TrackKeyRef> keySelection The keys the click selected.
-	 * @param Pose pose The pose the click landed on.
+	 * @param Pose landedPose The pose the click landed on, which is taken only while the pose is free to move.
 	 */
-	fun selectKeysAtPose(keySelection: Set<TrackKeyRef>, pose: Pose) {
+	fun selectKeysAtPose(keySelection: Set<TrackKeyRef>, landedPose: Pose) {
+		val pose = if (posePinned) mutablePose.value else landedPose
 		// Against history rather than the live flow, for the reason [setKeySelection] spells out: a staged
 		// selection has already moved the flow, and a click that lands on the selection a stage left there
 		// must still record it.
@@ -1442,19 +1471,30 @@ class EditorSession(
 	/**
 	 * The 2D cursor's world position, or null before any placement.  Transient session state like the
 	 * tool latches (deliberately NOT part of EditorSnapshot - see [Cursor2d]); placed by Shift+RightClick
-	 * in the viewport, moved by the snap commands, drawn by the HUD overlay, and read as the transform
-	 * pivot in [TransformPivotMode.Cursor].
+	 * in the viewport, moved by the snap commands, and drawn by the HUD overlay only once placed.  An
+	 * operation that uses the cursor as a point reads [cursor2dOrWorldOrigin] instead.
 	 */
 	val cursor2d: StateFlow<Cursor2d?> = latches.cursor2d
+
+	/**
+	 * Where the 2D cursor is: its placed point, or the world origin while it is unplaced.  An unplaced
+	 * cursor is not drawn, but everything that uses it as a point - the transform pivot in
+	 * [TransformPivotMode.Cursor] and the snap commands - treats it as resting on the world axes, the way
+	 * Blender's 3D cursor starts at the origin.  Resolved on read, so the persisted cursor stays unplaced.
+	 *
+	 * @return Cursor2d The cursor's world position.
+	 */
+	fun cursor2dOrWorldOrigin(): Cursor2d =
+		cursor2d.value ?: model.value.let { current -> Cursor2d(current.worldOriginX, current.worldOriginZ) }
 
 	/**
 	 * Places (or moves) the 2D cursor.
 	 *
 	 * @param Float worldX The cursor's new world-space x.
-	 * @param Float worldY The cursor's new world-space y.
+	 * @param Float worldZ The cursor's new world-space z (up).
 	 */
-	fun setCursor2d(worldX: Float, worldY: Float) {
-		latches.setCursor2d(worldX, worldY)
+	fun setCursor2d(worldX: Float, worldZ: Float) {
+		latches.setCursor2d(worldX, worldZ)
 	}
 
 	/**

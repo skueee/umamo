@@ -5,18 +5,20 @@ import org.jetbrains.compose.resources.stringResource
 import org.umamo.ui.action.Keymap
 import org.umamo.ui.action.formatAccelerator
 import org.umamo.ui.document.fileDisplayName
-import org.umamo.ui.kit.MenuItem
-import org.umamo.ui.kit.TopLevelMenu
+import org.umamo.ui.kit.menu.MenuItem
+import org.umamo.ui.kit.menu.TopLevelMenu
 import org.umamo.ui.resources.Res
 import org.umamo.ui.resources.cmd_workspace_next
 import org.umamo.ui.resources.cmd_workspace_prev
 import org.umamo.ui.resources.menu_about
+import org.umamo.ui.resources.menu_check_for_updates
 import org.umamo.ui.resources.menu_credits
 import org.umamo.ui.resources.menu_documentation
 import org.umamo.ui.resources.menu_edit
 import org.umamo.ui.resources.menu_exit
 import org.umamo.ui.resources.menu_export
 import org.umamo.ui.resources.menu_export_cmo3
+import org.umamo.ui.resources.menu_export_image
 import org.umamo.ui.resources.menu_export_moc3
 import org.umamo.ui.resources.menu_file
 import org.umamo.ui.resources.menu_file_new
@@ -28,8 +30,10 @@ import org.umamo.ui.resources.menu_import
 import org.umamo.ui.resources.menu_import_artwork
 import org.umamo.ui.resources.menu_import_cmo3
 import org.umamo.ui.resources.menu_import_moc3
+import org.umamo.ui.resources.menu_open_log_folder
 import org.umamo.ui.resources.menu_open_recent
 import org.umamo.ui.resources.menu_preferences
+import org.umamo.ui.resources.menu_quick_setup
 import org.umamo.ui.resources.menu_redo
 import org.umamo.ui.resources.menu_source_code
 import org.umamo.ui.resources.menu_undo
@@ -79,15 +83,17 @@ private fun commandRow(
  * `.uma` document; artwork, CMO3, and MOC3 come in through the Import submenu (artwork first: it is the
  * headline workflow's entry), and CMO3 / MOC3 are interop boundaries that leave through Export.  Every
  * row dispatches its file.* command, so the menu, the keyboard, and the palette share one path.  Both
- * Save rows are gated on [canSave] (a puppet document that did not open read-only) and both Export rows
- * on [canExport] (a puppet document is open; the CMO3 export reconciles onto a CMO3-origin document's
- * retained graph and synthesizes a fresh one otherwise); Open Recent labels each stored path via
+ * Save rows are gated on [canSave] (a puppet document that did not open read-only), the CMO3 and MOC3
+ * Export rows on [canExport] (a puppet document is open; the CMO3 export reconciles onto a CMO3-origin
+ * document's retained graph and synthesizes a fresh one otherwise), and Export Image on [canExportImage]
+ * (a puppet document is open on a platform with a puppet renderer to draw it); Open Recent labels each stored path via
  * fileDisplayName, disables itself when the list is empty, and hands the path to file.openPath, which
  * opens or imports by what the file is.
  *
  * @param Keymap       keymap      The keymap the accelerator hints are resolved against.
  * @param List         recentFiles The recent file paths for the Open Recent submenu, most-recent first.
- * @param Boolean      canExport   Whether an exportable puppet document is open (gates both Export rows).
+ * @param Boolean      canExport   Whether an exportable puppet document is open (gates the CMO3 and MOC3 rows).
+ * @param Boolean      canExportImage Whether the open document can be rendered to an image (gates Export Image).
  * @param Boolean      canSave     Whether the open document can be saved (gates both Save rows).
  * @param MenuDispatch dispatch    Runs a command by id.
  * @return TopLevelMenu The File menu.
@@ -97,6 +103,7 @@ fun fileMenu(
 	keymap: Keymap,
 	recentFiles: List<String>,
 	canExport: Boolean,
+	canExportImage: Boolean,
 	canSave: Boolean,
 	dispatch: MenuDispatch,
 ): TopLevelMenu =
@@ -130,6 +137,7 @@ fun fileMenu(
 						listOf(
 							commandRow(stringResource(Res.string.menu_export_cmo3), "file.exportCmo3", keymap, dispatch, enabled = canExport),
 							commandRow(stringResource(Res.string.menu_export_moc3), "file.exportMoc3", keymap, dispatch, enabled = canExport),
+							commandRow(stringResource(Res.string.menu_export_image), "file.exportImage", keymap, dispatch, enabled = canExportImage),
 						),
 				),
 				MenuItem.Separator,
@@ -199,28 +207,40 @@ fun workspaceMenu(
 	)
 
 /**
- * Builds the Help menu shared by every platform's menu bar: the project links, then Credits and About.
- * Every row dispatches its help.* command - the links open through the shell's handler and the two
- * dialogs through the overlay state the shell owns - so the palette reaches all five as well.
+ * Builds the Help menu shared by every platform's menu bar: the project links, then Quick Setup, and where the host
+ * supports them Check for Updates and Open Log Folder, then Credits and About.  Every row dispatches its help.*
+ * command - the links open through the shell's handler, the update check and the log folder through the host's, and
+ * the three dialogs through the overlay state the shell owns - so the palette reaches every one of them as well.
  *
- * @param Keymap       keymap   The keymap the accelerator hints are resolved against.
- * @param MenuDispatch dispatch Runs a command by id.
+ * @param Keymap       keymap             The keymap the accelerator hints are resolved against.
+ * @param MenuDispatch dispatch           Runs a command by id.
+ * @param Boolean      canOpenLogFolder   Whether the host registered Open Log Folder; its row is left out otherwise.
+ * @param Boolean      canCheckForUpdates Whether the host registered Check for Updates; its row is left out otherwise.
  * @return TopLevelMenu The Help menu.
  */
 @Composable
 fun helpMenu(
 	keymap: Keymap,
 	dispatch: MenuDispatch,
-): TopLevelMenu =
-	TopLevelMenu(
+	canOpenLogFolder: Boolean = false,
+	canCheckForUpdates: Boolean = false,
+): TopLevelMenu {
+	val logFolderRow = commandRow(stringResource(Res.string.menu_open_log_folder), "help.openLogFolder", keymap, dispatch)
+	val updateRow = commandRow(stringResource(Res.string.menu_check_for_updates), "help.checkForUpdates", keymap, dispatch)
+	return TopLevelMenu(
 		label = stringResource(Res.string.menu_help),
 		items =
-			listOf(
+			listOfNotNull(
 				commandRow(stringResource(Res.string.menu_source_code), "help.sourceCode", keymap, dispatch),
 				commandRow(stringResource(Res.string.menu_web_site), "help.webSite", keymap, dispatch),
 				commandRow(stringResource(Res.string.menu_documentation), "help.documentation", keymap, dispatch),
+				MenuItem.Separator,
+				commandRow(stringResource(Res.string.menu_quick_setup), "help.quickSetup", keymap, dispatch),
+				updateRow.takeIf { canCheckForUpdates },
+				logFolderRow.takeIf { canOpenLogFolder },
 				MenuItem.Separator,
 				commandRow(stringResource(Res.string.menu_credits), "help.credits", keymap, dispatch),
 				commandRow(stringResource(Res.string.menu_about), "help.about", keymap, dispatch),
 			),
 	)
+}

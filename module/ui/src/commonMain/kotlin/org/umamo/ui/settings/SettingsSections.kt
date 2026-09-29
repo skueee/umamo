@@ -13,23 +13,29 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import org.umamo.edit.seed.ParameterTemplate
 import org.umamo.interop.art.ArtworkAnchor
 import org.umamo.reimport.WatchMode
-import org.umamo.ui.kit.Checkbox
-import org.umamo.ui.kit.HexColorField
-import org.umamo.ui.kit.NumberField
-import org.umamo.ui.kit.SelectField
+import org.umamo.ui.app.CHECK_FOR_UPDATES_KEY
 import org.umamo.ui.kit.Text
 import org.umamo.ui.kit.VerticalScrollbarOverlay
+import org.umamo.ui.kit.field.Checkbox
+import org.umamo.ui.kit.field.HexColorField
+import org.umamo.ui.kit.field.NumberField
+import org.umamo.ui.kit.field.SelectField
+import org.umamo.ui.l10n.FALLBACK_LOCALE_TAG
+import org.umamo.ui.l10n.LOCALE_SETTINGS_KEY
+import org.umamo.ui.l10n.UI_LANGUAGE_ENDONYMS
 import org.umamo.ui.rememberBooleanSetting
 import org.umamo.ui.rememberDoubleSetting
 import org.umamo.ui.rememberIntSetting
 import org.umamo.ui.rememberStringSetting
 import org.umamo.ui.resources.Res
+import org.umamo.ui.resources.settings_check_for_updates
 import org.umamo.ui.resources.settings_colors_active_selection_highlight
 import org.umamo.ui.resources.settings_colors_group_edge
 import org.umamo.ui.resources.settings_colors_group_face
@@ -45,6 +51,7 @@ import org.umamo.ui.resources.settings_colors_viewport
 import org.umamo.ui.resources.settings_colors_warning
 import org.umamo.ui.resources.settings_import_alignment
 import org.umamo.ui.resources.settings_import_delete_art_ignores_layer
+import org.umamo.ui.resources.settings_import_layer_positions_from_world_axes
 import org.umamo.ui.resources.settings_import_parameter_template
 import org.umamo.ui.resources.settings_import_parameter_template_humanoid
 import org.umamo.ui.resources.settings_import_parameter_template_none
@@ -66,64 +73,28 @@ import org.umamo.ui.resources.settings_viewport_supersample_while_resizing
 import org.umamo.ui.resources.settings_viewport_zoom_step
 import org.umamo.ui.resources.settings_viewport_zoom_step_coarse
 import org.umamo.ui.theme.LocalUmamoColors
+import org.umamo.ui.theme.LocalUmamoIcons
 import org.umamo.ui.theme.LocalUmamoTypography
 import org.umamo.ui.viewport.ViewportColorSettings
 import org.umamo.ui.viewport.ViewportSettings
-import org.umamo.ui.workspace.artworkAnchorLabel
+import org.umamo.ui.workspace.operationstrip.artworkAnchorLabel
 
 /** The settings key + values for the UI theme mode, kept in lockstep with org.umamo.ui.theme.Theme. */
 private const val THEME_KEY = "interface.theme"
 private const val THEME_DEFAULT = "dark"
 
-/** The settings key + value for the UI language, kept in lockstep with the locale used by PersistentEditorShell. */
-private const val LOCALE_KEY = "localization.locale"
-private const val LOCALE_DEFAULT = "en"
-
 /**
  * The Interface section: theme, language, and the undo-history depth.  All three are wired end-to-end -
  * writing the key re-themes / re-localizes the running app and re-caps the open document's undo stack -
  * so each auto-saves with immediate visible effect.
- *
- * Theme option labels are localized chrome.  Language names are endonyms ("English" / "日本語" /
- * "한국어" / "Français") shown verbatim regardless of the active UI language - a language's own name
- * is identity, not chrome to translate, the same reasoning that keeps format-level identifiers unlocalized.
  */
 @Composable
 internal fun InterfaceSection() {
-	var theme by rememberStringSetting(THEME_KEY, THEME_DEFAULT)
-	var locale by rememberStringSetting(LOCALE_KEY, LOCALE_DEFAULT)
 	var historyLimit by rememberIntSetting(HistorySettings.HISTORY_LIMIT_KEY, HistorySettings.HISTORY_LIMIT_DEFAULT)
 
-	// Resolve option labels in composition (stringResource is @Composable) into ordered maps, so the
-	// SelectField label lambda - which is plain (T) -> String - is a lookup, not a composable call. The
-	// command palette resolves its labels the same way.
-	val themeLabels =
-		linkedMapOf(
-			"dark" to stringResource(Res.string.settings_theme_dark),
-			"light" to stringResource(Res.string.settings_theme_light),
-			"system" to stringResource(Res.string.settings_theme_system),
-		)
-	// One entry per composeResources/values-<tag>/ catalog; the key is the BCP-47 tag written to
-	// localization.locale, which applyAppLocale feeds to the resource environment.
-	val languageEndonyms = linkedMapOf("en" to "English", "ja" to "日本語", "ko" to "한국어", "fr" to "Français")
-
 	Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SETTING_ROW_SPACING)) {
-		SettingRow(label = stringResource(Res.string.settings_interface_theme)) {
-			SelectField(
-				selected = theme,
-				options = themeLabels.keys.toList(),
-				label = { value -> themeLabels[value] ?: value },
-				onSelect = { value -> theme = value },
-			)
-		}
-		SettingRow(label = stringResource(Res.string.settings_interface_language)) {
-			SelectField(
-				selected = locale,
-				options = languageEndonyms.keys.toList(),
-				label = { value -> languageEndonyms[value] ?: value },
-				onSelect = { value -> locale = value },
-			)
-		}
+		ThemeSettingRow()
+		LanguageSettingRow()
 		// Lowering this trims the open document's stack on commit, but never past the live step - the
 		// current state and anything left to redo always survive (see EditorSession.historyLimit).
 		SettingRow(label = stringResource(Res.string.settings_interface_history_steps)) {
@@ -134,6 +105,74 @@ internal fun InterfaceSection() {
 				modifier = Modifier.width(80.dp),
 			)
 		}
+		UpdateCheckSettingRow()
+	}
+}
+
+/**
+ * Whether the host can check for updates: the app provides true where it passed an update transport, so the
+ * setting's row shows only where the setting does something.
+ */
+internal val LocalUpdateChecks = staticCompositionLocalOf { false }
+
+/**
+ * The check-for-updates row, bound write-through to app.checkForUpdates: Preferences and Quick Setup share it.  It is
+ * checked unless the rigger turned the check off, and left out where the host cannot check ([LocalUpdateChecks]).
+ */
+@Composable
+internal fun UpdateCheckSettingRow() {
+	if (!LocalUpdateChecks.current) {
+		return
+	}
+	var checkForUpdates by rememberBooleanSetting(CHECK_FOR_UPDATES_KEY, true)
+	Checkbox(
+		checked = checkForUpdates,
+		onCheckedChange = { checked -> checkForUpdates = checked },
+		label = stringResource(Res.string.settings_check_for_updates),
+	)
+}
+
+/**
+ * The UI theme row, bound write-through to interface.theme: Preferences and Quick Setup share it, so both
+ * offer the same modes under the same labels.  The option labels are localized chrome.
+ */
+@Composable
+internal fun ThemeSettingRow() {
+	var theme by rememberStringSetting(THEME_KEY, THEME_DEFAULT)
+	// Resolve option labels in composition (stringResource is @Composable) into ordered maps, so the
+	// SelectField label lambda - which is plain (T) -> String - is a lookup, not a composable call. The
+	// command palette resolves its labels the same way.
+	val themeLabels =
+		linkedMapOf(
+			"dark" to stringResource(Res.string.settings_theme_dark),
+			"light" to stringResource(Res.string.settings_theme_light),
+			"system" to stringResource(Res.string.settings_theme_system),
+		)
+	SettingRow(label = stringResource(Res.string.settings_interface_theme)) {
+		SelectField(
+			selected = theme,
+			options = themeLabels.keys.toList(),
+			label = { value -> themeLabels[value] ?: value },
+			onSelect = { value -> theme = value },
+		)
+	}
+}
+
+/**
+ * The UI language row, bound write-through to localization.locale: Preferences and Quick Setup share it.
+ * The row leads with the globe so a rigger who cannot read the current language can still find it, and the
+ * options are endonyms (see [UI_LANGUAGE_ENDONYMS]) for the same reason.
+ */
+@Composable
+internal fun LanguageSettingRow() {
+	var locale by rememberStringSetting(LOCALE_SETTINGS_KEY, FALLBACK_LOCALE_TAG)
+	SettingRow(label = stringResource(Res.string.settings_interface_language), icon = LocalUmamoIcons.language) {
+		SelectField(
+			selected = locale,
+			options = UI_LANGUAGE_ENDONYMS.keys.toList(),
+			label = { value -> UI_LANGUAGE_ENDONYMS[value] ?: value },
+			onSelect = { value -> locale = value },
+		)
 	}
 }
 
@@ -149,14 +188,18 @@ internal const val IMPORT_WATCH_MODE_KEY = "import.watchMode"
 /** The settings key for whether Delete Art also marks the tile's layer ignored, so a reload does not mint the art back. */
 internal const val IMPORT_DELETE_ART_IGNORES_LAYER_KEY = "import.deleteArtIgnoresLayer"
 
+/** The settings key for whether the Sources layer rows measure positions from the world axes instead of the art file's top-left corner. */
+internal const val IMPORT_LAYER_POSITIONS_FROM_WORLD_AXES_KEY = "import.layerPositionsFromWorldAxes"
+
 /**
  * The Import section: what an artwork import seeds a new model with, where a later file is anchored
- * on the rig's canvas, what a document does when a watched artwork file changes, and whether Delete
- * Art keeps the deleted layer out of the rig.  The parameter template and the anchor are stored as
- * their keys so a later entry is one more option here and one more enum entry, nothing else; the
- * import reads them at the moment it runs, so a change applies to the next import (and the anchor is
- * only the default of the import's own Align row).  The watch mode is stored as the mode's key and
- * read live by the open document's watcher.  The Delete Art choice is read at each dispatch.
+ * on the rig's canvas, what a document does when a watched artwork file changes, whether Delete Art
+ * keeps the deleted layer out of the rig, and which frame the Sources layer rows measure positions in.
+ * The parameter template and the anchor are stored as their keys so a later entry is one more option
+ * here and one more enum entry, nothing else; the import reads them at the moment it runs, so a change
+ * applies to the next import (and the anchor is only the default of the import's own Align row).  The
+ * watch mode is stored as the mode's key and read live by the open document's watcher.  The Delete Art
+ * choice is read at each dispatch.  The layer-position frame is read live by the Sources space.
  */
 @Composable
 internal fun ImportSection() {
@@ -171,6 +214,8 @@ internal fun ImportSection() {
 	val anchorLabels = ArtworkAnchor.entries.associate { anchor -> anchor.key to artworkAnchorLabel(anchor) }
 
 	var deleteArtIgnoresLayer by rememberBooleanSetting(IMPORT_DELETE_ART_IGNORES_LAYER_KEY, false)
+
+	var layerPositionsFromWorldAxes by rememberBooleanSetting(IMPORT_LAYER_POSITIONS_FROM_WORLD_AXES_KEY, false)
 
 	var watchModeKey by rememberStringSetting(IMPORT_WATCH_MODE_KEY, WatchMode.Default.key)
 	val watchModeLabels =
@@ -214,6 +259,13 @@ internal fun ImportSection() {
 			checked = deleteArtIgnoresLayer,
 			onCheckedChange = { checked -> deleteArtIgnoresLayer = checked },
 			label = stringResource(Res.string.settings_import_delete_art_ignores_layer),
+		)
+		// Off by default: a layer row reads its position in the art file's own frame, the numbers the art
+		// program shows.  On, it reads from the world axes like every other position in the app.
+		Checkbox(
+			checked = layerPositionsFromWorldAxes,
+			onCheckedChange = { checked -> layerPositionsFromWorldAxes = checked },
+			label = stringResource(Res.string.settings_import_layer_positions_from_world_axes),
 		)
 	}
 }

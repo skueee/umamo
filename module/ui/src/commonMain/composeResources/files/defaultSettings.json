@@ -56,9 +56,14 @@
 		"parameterTemplate": "humanoid",
 		"alignment": "center",
 		"watchMode": "auto",
-		"deleteArtIgnoresLayer": false
+		"deleteArtIgnoresLayer": false,
+		"layerPositionsFromWorldAxes": false
 	},
 	"app": {
-		"launchCount": 0
+		"launchCount": 0,
+		"showLowMemoryNotice": true,
+		"checkForUpdates": true,
+		"lastUpdateCheck": 0,
+		"skippedUpdateVersion": ""
 	}
 }

@@ -12,10 +12,10 @@ import org.umamo.format.uma.UmaModel
  * Where a document saves, held apart from the document itself.
  *
  * A [Document] is the identity the editing session keys on, so a save must not replace it: a CMO3-origin
- * document stays a Cmo3Document after its first save, and its exports keep reconciling onto the graph it
- * retained.  Everything a save changes lives here instead - the `.uma` the document now lives in and the
- * [UmaModel] the next save lays over - one holder per open document, remembered by the host beside the
- * session.  A document with no file yet (a new one, or an import that was never saved) has no path until
+ * document stays a Cmo3Document after its first save, and its exports keep reconciling onto a fresh read of
+ * the graph it retained.  Everything a save changes lives here instead - the `.uma` the document now lives
+ * in and the [UmaModel] the next save lays over - one holder per open document, remembered by the host
+ * beside the session.  A document with no file yet (a new one, or an import that was never saved) has no path until
  * its first Save As, which is what makes that first Save a Save As.
  */
 class DocumentFile(origin: Document) {
@@ -84,4 +84,13 @@ class DocumentFile(origin: Document) {
 	 * `Erica`; null for a document with no file, which the caller names the localized untitled name.
 	 */
 	val suggestedBaseName: String? = origin.path?.let { saveSuggestedName(origin.displayName) }
+
+	/**
+	 * The name an export suggests: the `.uma` the document saves to, else the file it came from, minus the
+	 * extension - so a document saved as `hero.uma` exports as `hero`, and one opened from `hero.psd` as `hero`,
+	 * not `hero.psd`.  Read live, so it follows a Save As; null for a document with neither, which the caller
+	 * names the localized untitled name.
+	 */
+	val exportBaseName: String?
+		get() = umaPath?.let { path -> saveSuggestedName(fileDisplayName(path)) } ?: suggestedBaseName
 }

@@ -3,8 +3,10 @@ package org.umamo.ui.viewport
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.coroutines.flow.StateFlow
 import org.umamo.edit.GridConfig
+import org.umamo.format.raster.RasterImage
 import org.umamo.render.ContentBounds
 import org.umamo.render.DecodedImage
+import org.umamo.render.FrameBackdrop
 import org.umamo.render.GridColors
 import org.umamo.render.LayerDrawPlan
 import org.umamo.render.LayerRasterBatch
@@ -284,11 +286,11 @@ interface PuppetViewportService {
 	 *
 	 * @param String areaId The area to frame in.
 	 * @param Float minX The rectangle's minimum world x.
-	 * @param Float minY The rectangle's minimum world y.
+	 * @param Float minZ The rectangle's minimum world z (up).
 	 * @param Float maxX The rectangle's maximum world x.
-	 * @param Float maxY The rectangle's maximum world y.
+	 * @param Float maxZ The rectangle's maximum world z (up).
 	 */
-	fun fitWorldRect(areaId: String, minX: Float, minY: Float, maxX: Float, maxY: Float)
+	fun fitWorldRect(areaId: String, minX: Float, minZ: Float, maxX: Float, maxZ: Float)
 
 	/**
 	 * Pushes the selected drawables; the engine re-renders their tint.
@@ -407,6 +409,34 @@ interface PuppetViewportService {
 	 * @return Map<DrawableId, FloatArray> Per-drawable [x, y] world centroid.
 	 */
 	fun drawableWorldCentroids(): Map<DrawableId, FloatArray>
+
+	/**
+	 * Renders the posed puppet into an image: what the 2D viewport draws, through [frame]'s camera at its
+	 * size, over [backdrop], with no selection tint, gizmos, or other editor chrome.  The pose, the shown
+	 * drawables, and the artwork are the viewport's own at the moment the render thread takes the request.
+	 *
+	 * @param ImageFrame    frame    The camera and pixel size to render.
+	 * @param FrameBackdrop backdrop What the puppet is drawn over.
+	 * @return RasterImage? The image, straight alpha, top row first; null when the renderer cannot render
+	 *   (its context never came up, it was disposed, or the render failed).
+	 */
+	suspend fun renderImage(frame: ImageFrame, backdrop: FrameBackdrop): RasterImage?
+
+	/**
+	 * What a 2D viewport area shows right now, as a frame: its camera and its size in pixels.
+	 *
+	 * @param String areaId The area.
+	 * @return ImageFrame? The area's frame, or null when it is not registered or has not been sized and fitted yet.
+	 */
+	fun areaView(areaId: String): ImageFrame?
+
+	/**
+	 * The shown drawables' world-space extent at the current pose - what the viewport draws, measured, where
+	 * [fit] frames the rest pose.  CPU-side, on the calling thread.
+	 *
+	 * @return ContentBounds? The extent, or null before the first pose or when nothing shown has geometry.
+	 */
+	fun visibleContentBounds(): ContentBounds?
 
 	/**
 	 * A drawable's cached art thumbnail (the overlap-picker row image), or null when untextured.

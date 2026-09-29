@@ -3,10 +3,10 @@ package org.umamo.ui.workspace.commands
 import org.umamo.ui.action.Command
 import org.umamo.ui.help.ProjectInfo
 import org.umamo.ui.resources.*
-import org.umamo.ui.workspace.AreaDragController
 import org.umamo.ui.workspace.ShellOverlayState
-import org.umamo.ui.workspace.SplitterDragCancelController
-import org.umamo.ui.workspace.WorkspaceLayoutController
+import org.umamo.ui.workspace.area.AreaDragController
+import org.umamo.ui.workspace.area.SplitterDragCancelController
+import org.umamo.ui.workspace.layout.WorkspaceLayoutController
 import org.umamo.ui.workspace.rowdrag.RowDragCancelController
 
 /**
@@ -51,6 +51,8 @@ internal fun chromeCommands(
 		// so they surface there for free) reach them through the one dispatch point.
 		Command("help.about", title = Res.string.menu_about) { overlays.aboutVisible = !overlays.aboutVisible },
 		Command("help.credits", title = Res.string.menu_credits) { overlays.creditsVisible = !overlays.creditsVisible },
+		// Quick Setup opens by itself on a first run; this reopens it (the Help menu and the palette).
+		Command("help.quickSetup", title = Res.string.menu_quick_setup) { overlays.quickSetupVisible = !overlays.quickSetupVisible },
 		// The project links are commands as well, so the Help menu's rows dispatch like every other row and
 		// the palette finds the documentation by name.  The URLs come from ProjectInfo, the same source the
 		// About dialog shows.

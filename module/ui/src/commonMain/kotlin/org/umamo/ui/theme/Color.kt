@@ -58,7 +58,7 @@ import androidx.compose.ui.graphics.Color
  *   hover state).
  * @property Color controlGlyph       Icon glyphs on neutral control and chip fills.
  * @property Color keyedOnKey         Text/glyph tint for a field whose channel is keyed and the pose sits
- *   exactly on one of its keys (Blender-style keyframe tinting; see [org.umamo.ui.model.KeyedFieldState]).
+ *   exactly on one of its keys (Blender-style keyframe tinting; see [org.umamo.ui.kit.field.KeyedFieldState]).
  * @property Color keyedBetween       Text/glyph tint for a field whose channel is keyed but the pose is not
  *   sitting on one of its keys - an edit here needs an explicit key to survive.
  * @property Color keyedModified      Text/glyph tint for a field with an edit made and not yet keyed; it is
@@ -208,7 +208,7 @@ private val brandPurpleDeepBright = Color(0xFF9B63B9)
 private val mutedGreyDark = Color(0xFF9A9A9A)
 private val mutedGreyLight = Color(0xFF6B6B6B)
 
-// Blender's armature object / data signature colours, per outliner node family.
+// Blender's armature object / data signature colors, per outliner node family.
 private val outlinerTanDark = Color(0xFFE19658)
 private val outlinerTanLight = Color(0xFFE19658)
 private val outlinerTealDark = Color(0xFF00D4A3)

@@ -26,22 +26,23 @@ import org.umamo.runtime.model.Part
 import org.umamo.runtime.model.PuppetModel
 
 /**
- * Lowers an edited [PuppetModel] back onto the retained CMO3 graph it was imported from - the
- * export half of the CMO3 interop boundary (Cmo3Import is the import half).
+ * Lowers an edited [PuppetModel] back onto a fresh read of the retained CMO3 graph it was imported
+ * from - the export half of the CMO3 interop boundary (Cmo3Import is the import half).
  *
  * The design is a state-based reconcile, not a Change-log replay: [apply] re-imports the graph
  * to get a baseline, diffs the edited model against it, and only diff entries touch the graph.
- * An unedited model therefore leaves the graph untouched and a subsequent Cmo3.write byte-
- * identical; a re-export after an export reconciles against the just-updated graph and is a
- * no-op.  Structure runs first (created entities get identity shells, deleted ones leave their
- * source sets), then every surviving/created entity's fields flow through the one field-level
- * lowering path.  Edits the lowering cannot (yet or ever) express in CMO3 are returned as
- * notices, never silently dropped.
+ * An unedited model therefore leaves the graph untouched, and a subsequent Cmo3.write re-emits its
+ * main.xml byte for byte.  Structure runs first (created entities get identity shells, deleted
+ * ones leave their source sets), then every surviving/created entity's fields flow through the
+ * one field-level lowering path.  Edits the lowering cannot (yet or ever) express in CMO3 are
+ * returned as notices, never silently dropped.
  *
- * The graph is mutated IN PLACE ([Cmo3Model] holds identity-keyed reconcile metadata a deep
- * copy cannot carry).  The full diff is computed before any mutation, so a failed export
- * leaves either the untouched or the fully-reconciled graph - and either way the next apply
- * self-heals from model state.
+ * The target is mutated IN PLACE, pass by pass - the atlas web and the archive entries behind it,
+ * the model icons, the structural creates and deletes, the field lowering, and the prune - with no
+ * rollback, so a failure part way through leaves it half-reconciled.  The target must therefore be
+ * a model nothing else reads: a fresh Cmo3.read of a retained archive, which rebuilds the
+ * identity-keyed serializer metadata a deep copy of a graph cannot carry, or a graph synthesized
+ * for the export (Cmo3Conversion.freshCmo3).
  */
 object Cmo3Export {
 	/** Every field of a synthesized drawable, so its shell is populated through the Changed path. */
@@ -88,7 +89,10 @@ object Cmo3Export {
 	 *
 	 * @param PuppetModel edited The session's current model (EditorSession.model.value - NOT the
 	 *                           document's original import, which edits never update).
-	 * @param Cmo3Model   target The retained CMO3 model whose graph receives the edits.
+	 * @param Cmo3Model   target The model whose graph and archive receive the edits, mutated in place
+	 *                           and left half-reconciled when a pass fails - a fresh read of a
+	 *                           retained archive or a synthesized graph, never a model something
+	 *                           else reads.
 	 * @param Map         drawableTextureBindings Per-drawable-id texture webs for created drawables
 	 *                           without a texture source; empty for CMO3-origin exports.
 	 * @param List        recomposedPages The pages a repack composed for the edited model's packing,
@@ -117,18 +121,21 @@ object Cmo3Export {
 		if (diff.isEmpty) {
 			return ExportReport(ExportFormat.Cmo3, emptyList())
 		}
+		// Taken before any pass writes: a reload rewrite rebuilds a model image's cache, and every later
+		// pass must still know which textures were the editor's reduced copies.
+		val textureFrames = Cmo3TextureFrames(modelSource)
 		val notices = ArrayList<ExportNotice>()
 		val editor = target.edit()
 		// The atlas-web reconcile runs before the graph lowering so the stale-page notices know
 		// whether the stored pages already show the new packing.  Strictly diff-gated by the CALLER:
 		// an unedited document passes no pages, and the graph and archive are then never touched.
-		val webResult = Cmo3AtlasWebLowering(target, modelSource, baseline, edited, editor, tileRasters, nowMillis).reconcile(recomposedPages)
+		val webResult = Cmo3AtlasWebLowering(target, modelSource, baseline, edited, editor, tileRasters, nowMillis, textureFrames).reconcile(recomposedPages)
 		val pagesRecomposed = webResult.pagesRecomposed
 		// The model icons follow an edited export (the diff is non-empty here): the editor regenerates
 		// them on its own saves, and a thumbnail of the rest pose is what it shows for the file.
 		if (modelThumbnail != null) {
 			(modelSource.textureManager as? CTextureManager)?.let { textureManager ->
-				Cmo3RetainedLayerWeb(target, textureManager, editor, edited, tileRasters, nowMillis).replaceModelIcons(modelSource, modelThumbnail)
+				Cmo3RetainedLayerWeb(target, textureManager, editor, edited, tileRasters, nowMillis, textureFrames).replaceModelIcons(modelSource, modelThumbnail)
 			}
 		}
 		// A created drawable over art the reconcile minted binds through the binding it handed back;
@@ -152,6 +159,7 @@ object Cmo3Export {
 				editor,
 				edited,
 				notices,
+				textureFrames,
 				bindings,
 			)
 
@@ -168,6 +176,7 @@ object Cmo3Export {
 				editor,
 				edited,
 				notices,
+				textureFrames,
 				bindings,
 			)
 		}
@@ -360,6 +369,7 @@ object Cmo3Export {
 				baseline = baseline,
 				edited = edited,
 				notices = notices,
+				textureFrames = textureFrames,
 				pagesRecomposed = pagesRecomposed,
 				reconciledTileIds = webResult.reconciledTileIds,
 			)

@@ -6,15 +6,15 @@ import org.umamo.runtime.model.SourceLayerRef
 import org.umamo.ui.action.CommandRegistry
 import org.umamo.ui.help.ProjectInfo
 import org.umamo.ui.workspace.AreaCameraHub
-import org.umamo.ui.workspace.AreaDragController
 import org.umamo.ui.workspace.HoveredSurface
 import org.umamo.ui.workspace.KeyformSheetViews
-import org.umamo.ui.workspace.OperationStripState
 import org.umamo.ui.workspace.ShellOverlayState
 import org.umamo.ui.workspace.SpaceKind
-import org.umamo.ui.workspace.SplitterDragCancelController
-import org.umamo.ui.workspace.WorkspaceLayoutController
-import org.umamo.ui.workspace.defaultLayout
+import org.umamo.ui.workspace.area.AreaDragController
+import org.umamo.ui.workspace.area.SplitterDragCancelController
+import org.umamo.ui.workspace.layout.WorkspaceLayoutController
+import org.umamo.ui.workspace.layout.defaultLayout
+import org.umamo.ui.workspace.operationstrip.OperationStripState
 import org.umamo.ui.workspace.rowdrag.RowDragCancelController
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,6 +62,7 @@ class CommandTableOrderTest {
 				"edit.preferences",
 				"help.about",
 				"help.credits",
+				"help.quickSetup",
 				"help.sourceCode",
 				"help.webSite",
 				"help.documentation",
@@ -87,7 +88,7 @@ class CommandTableOrderTest {
 				"document.confirmExit",
 				"document.exportReport",
 				"document.repackReport",
-				"document.exportOptionsMoc3",
+				"document.exportOptions",
 				"document.confirm",
 				"document.alert",
 			),
@@ -232,6 +233,32 @@ class CommandTableOrderTest {
 		assertEquals(listOf("workspace.import", "workspace.exportThis", "workspace.exportAll", "logs.export"), commands.map { command -> command.id })
 	}
 
+	/**
+	 * Open Log Folder is a table of its own, registered by the app only when its host can show a folder, and its handler
+	 * is the host's call and nothing else.
+	 */
+	@Test
+	fun theLogFolderTableRunsTheHostsOpener() {
+		var opened = 0
+		val commands = logFolderCommands { opened++ }
+
+		assertEquals(listOf("help.openLogFolder"), commands.map { command -> command.id })
+		commands.single().handler.run(null)
+
+		assertEquals(1, opened)
+	}
+
+	@Test
+	fun theUpdateTableRunsTheCheck() {
+		var checks = 0
+		val commands = updateCommands { checks++ }
+
+		assertEquals(listOf("help.checkForUpdates"), commands.map { command -> command.id })
+		commands.single().handler.run(null)
+
+		assertEquals(1, checks)
+	}
+
 	/** The viewport chrome toggles the settings-backed shell registers; they write settings, so they build over an in-memory tree. */
 	@Test
 	fun viewportChromeTableIsComplete() {
@@ -260,6 +287,29 @@ class CommandTableOrderTest {
 			listOf("file.importArtwork", "document.reloadArtwork", "sources.relink", "sources.matchAutomatically", "sources.replaceArtwork", "sources.deleteArt", "sources.ignoreLayer"),
 			fileArtworkCommands(routing()) { null }.map { command -> command.id },
 		)
+		assertEquals(listOf("file.exportImage"), fileImageExportCommands(routing()) { null }.map { command -> command.id })
+	}
+
+	/**
+	 * Export Image hides itself while nothing can be captured (the collaborator is null) and asks LIVE; fired, it
+	 * hands the export the 2D viewport the pointer last touched, and no area at all when that surface was
+	 * anything else - never a viewport the pointer has left.
+	 */
+	@Test
+	fun imageExportFollowsTheCollaboratorAndTheHoveredViewport() {
+		var exportImage: ((String?) -> Unit)? = null
+		var hovered = HoveredSurface("viewport-3", SpaceKind.Viewport2D)
+		val command = fileImageExportCommands(CommandRouting { hovered }) { exportImage }.single()
+		assertFalse(command.availability.isAvailable(), "nothing to capture with no renderer or document")
+
+		val framedAreas = ArrayList<String?>()
+		exportImage = { areaId -> framedAreas.add(areaId) }
+		assertTrue(command.availability.isAvailable(), "the collaborator is queried per call, not sampled at registration")
+		command.handler.run(null)
+		hovered = HoveredSurface("outliner-1", SpaceKind.Outliner)
+		command.handler.run(null)
+
+		assertEquals(listOf("viewport-3", null), framedAreas)
 	}
 
 	/**

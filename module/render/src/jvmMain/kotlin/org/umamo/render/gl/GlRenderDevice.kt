@@ -101,7 +101,7 @@ class GlRenderDevice : RenderDevice {
 			pixelTypeOf(format),
 			pixelBuffer,
 		)
-		return GlTexture(handle)
+		return GlTexture(handle, filter, wrap)
 	}
 
 	override fun createFloatTexture(width: Int, height: Int, filter: TextureFilter, texels: FloatArray): GpuTexture {
@@ -114,7 +114,7 @@ class GlRenderDevice : RenderDevice {
 				flip()
 			}
 		GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RG32F, width, height, 0, GL30.GL_RG, GL11.GL_FLOAT, texelBuffer)
-		return GlTexture(handle)
+		return GlTexture(handle, filter, TextureWrap.ClampToEdge)
 	}
 
 	override fun updateFloatTexture(texture: GpuTexture, width: Int, height: Int, texels: FloatArray) {
@@ -444,6 +444,14 @@ class GlRenderDevice : RenderDevice {
 		pixels.get(bottomUp)
 		// GL reads bottom-up; RasterImage is top-first. The flip is this backend's; no caller asks.
 		return RasterImage(usedWidth, usedHeight, flipRowsVertically(bottomUp, usedWidth, usedHeight))
+	}
+
+	override fun maxRenderTargetSize(): Int {
+		val viewportDimensions = IntArray(2)
+		GL11.glGetIntegerv(GL11.GL_MAX_VIEWPORT_DIMS, viewportDimensions)
+		val textureSize = GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE)
+		val renderbufferSize = GL11.glGetInteger(GL30.GL_MAX_RENDERBUFFER_SIZE)
+		return minOf(textureSize, renderbufferSize, viewportDimensions[0], viewportDimensions[1])
 	}
 
 	override fun describeBackend(): String {

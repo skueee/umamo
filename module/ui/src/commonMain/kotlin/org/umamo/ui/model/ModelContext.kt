@@ -14,6 +14,13 @@ import org.umamo.runtime.model.PartId
 import org.umamo.runtime.model.PuppetModel
 import org.umamo.ui.viewport.PuppetViewportService
 
+/*
+ * The open document as the panels see it: the composition locals and handle interfaces the host
+ * provides (this file), the session-backed selection and mode handles (SessionEditorState.kt), and the
+ * resolver from the session's atlas to page pixels (SessionAtlasPages.kt).  This package root imports
+ * none of its subpackages: repack and thumbnails build on it, and artwork builds on repack.
+ */
+
 /**
  * The open document's runtime [PuppetModel] for the composition, or null when nothing is open. Panels
  * (Outliner, Properties, Parameters) read `LocalPuppet.current` to display parts/parameters; the host
@@ -116,7 +123,7 @@ val LocalSourceArtRasters = staticCompositionLocalOf<SourceArtRasters?> { null }
 
 /**
  * A platform-neutral source of small art-mesh previews, mirroring [SelectionHandle] / [LiveParamsHandle].
- * The Outliner asks for a drawable's thumbnail on hover; the host backs it with the same crop-and-downsample
+ * The Outliner and the Sources space ask for a drawable's thumbnail on hover; the host backs it with the same crop-and-downsample
  * machinery the viewport's overlap picker uses (the atlas region under the mesh UV bounds). Kept an interface
  * in `:ui` commonMain so the panels stay common - the desktop wraps its Skiko rasteriser, Android will wrap
  * its own. A null provider (or a null result) means no preview, so callers simply show nothing.
@@ -144,7 +151,7 @@ interface DrawableThumbnailProvider {
 
 /**
  * The drawable-thumbnail provider for the composition, or null when none is wired (e.g. no document open,
- * or a platform without the renderer). The Outliner hover preview no-ops when it is null.
+ * or a platform without the renderer). The Outliner and Sources hover previews no-op when it is null.
  */
 val LocalDrawableThumbnails = staticCompositionLocalOf<DrawableThumbnailProvider?> { null }
 
@@ -156,6 +163,10 @@ val LocalDrawableThumbnails = staticCompositionLocalOf<DrawableThumbnailProvider
  * records one undo step at the gesture boundary (drag release, a typed value, a reset). So a whole slider
  * drag is a single undo step. The desktop implementation writes its volatile LiveParams hand-off on
  * preview and routes commit through the EditorSession; Android will wrap its own.
+ *
+ * Both writes are refused while Edit mode pins the pose, so a control that scrubs needs no lock of its
+ * own to be safe.  A control that also SHOWS the value it writes still has to know, or it would show a
+ * value the write never took.
  */
 interface LiveParamsHandle {
 	/** The current parameter values (parameter id → value). */

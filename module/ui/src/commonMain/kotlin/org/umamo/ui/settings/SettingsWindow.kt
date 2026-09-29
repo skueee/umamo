@@ -27,12 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import org.umamo.ui.kit.FIELD_ROW_LABEL_WIDTH
-import org.umamo.ui.kit.FIELD_ROW_SPACING
-import org.umamo.ui.kit.FieldRow
 import org.umamo.ui.kit.Surface
 import org.umamo.ui.kit.Text
 import org.umamo.ui.kit.button.CloseButton
+import org.umamo.ui.kit.field.FIELD_ROW_LABEL_WIDTH
+import org.umamo.ui.kit.field.FIELD_ROW_SPACING
+import org.umamo.ui.kit.field.FieldRow
 import org.umamo.ui.resources.Res
 import org.umamo.ui.resources.settings_category_colors
 import org.umamo.ui.resources.settings_category_import
@@ -45,6 +45,7 @@ import org.umamo.ui.resources.settings_title
 import org.umamo.ui.theme.LocalUmamoColors
 import org.umamo.ui.theme.LocalUmamoShapes
 import org.umamo.ui.theme.LocalUmamoTypography
+import org.umamo.ui.theme.UmamoIcon
 
 /** Fixed width of the left category rail; wide enough for the longest localized category label. */
 private val CATEGORY_RAIL_WIDTH = 168.dp
@@ -147,8 +148,6 @@ fun SettingsWindow(onDismiss: () -> Unit) {
  * on-accent text color; the rest hover-highlight, matching the kit's row idiom (the command palette
  * list, menu rows).
  *
- * 左のカテゴリ一覧。選択行はアクセント塗り、他はホバーで強調。
- *
  * @param SettingsCategory selected The currently selected category.
  * @param Function         onSelect Called with a category when its row is clicked.
  * @param Modifier         modifier Layout modifier for the rail column.
@@ -198,12 +197,11 @@ internal val SETTING_LABEL_WIDTH = FIELD_ROW_LABEL_WIDTH
  * settings label-column width so every section aligns.  Kept as its own name so the many settings call
  * sites stay a one-liner.
  *
- * 設定 1 行。共有の kit FieldRow を設定用のラベル幅で包む薄いラッパー。
- *
- * @param String   label   The already-localized row label.
- * @param Function control The control composable (a SelectField, etc.).
+ * @param String     label   The already-localized row label.
+ * @param UmamoIcon? icon    A glyph before the label (the language row's globe), or null for none.
+ * @param Function   control The control composable (a SelectField, etc.).
  */
 @Composable
-internal fun SettingRow(label: String, control: @Composable () -> Unit) {
-	FieldRow(label = label, labelWidth = SETTING_LABEL_WIDTH, control = control)
+internal fun SettingRow(label: String, icon: UmamoIcon? = null, control: @Composable () -> Unit) {
+	FieldRow(label = label, labelWidth = SETTING_LABEL_WIDTH, icon = icon, control = control)
 }

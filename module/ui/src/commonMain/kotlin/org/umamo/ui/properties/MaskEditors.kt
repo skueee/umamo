@@ -15,7 +15,7 @@ import org.umamo.runtime.model.DrawableId
 import org.umamo.runtime.model.Part
 import org.umamo.runtime.model.PartComposite
 import org.umamo.runtime.model.PartId
-import org.umamo.ui.kit.RelationListField
+import org.umamo.ui.kit.field.RelationListField
 import org.umamo.ui.resources.*
 import org.umamo.ui.theme.LocalUmamoIcons
 import org.umamo.ui.theme.UmamoIcon
@@ -150,7 +150,10 @@ internal fun PartMaskEditor(part: Part, composite: PartComposite, context: Prope
 	}
 
 	val viewState = LocalPropertiesViewState.current
-	RelationListBlock(stringResource(Res.string.properties_field_masked_by)) {
+	RelationListBlock(
+		stringResource(Res.string.properties_field_masked_by),
+		description = stringResource(Res.string.properties_field_masked_by_part_description),
+	) {
 		RelationListField(
 			entries = entries,
 			candidates = candidates,
@@ -209,7 +212,10 @@ internal fun DrawableMaskEditor(drawable: Drawable, context: PropertyContext) {
 	}
 
 	val viewState = LocalPropertiesViewState.current
-	RelationListBlock(stringResource(Res.string.properties_field_masked_by)) {
+	RelationListBlock(
+		stringResource(Res.string.properties_field_masked_by),
+		description = stringResource(Res.string.properties_field_masked_by_description),
+	) {
 		RelationListField(
 			entries = entries,
 			candidates = candidates,

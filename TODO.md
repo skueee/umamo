@@ -29,18 +29,12 @@
 * From CrystalorImLisa on Reddit: The ability to mirror deformers and drawables along with their key frames.
 	* Umamo solution: Select a deformer and the drawable -> Duplicate -> Mirror X (On the duplicate) -> Do some minor UV clean up -> Done!
 	* https://www.reddit.com/r/Live2D/comments/1uy0871/is_there_a_way_to_duplicate_a_warp_deformer/
-
-## World Origin
-I should fix the naming so that origin is X and Z in the code.  Z up, Y forward.
+* From @thesillydarku on Twitter: "I had to manually add the "-Xmx4g" flag otherwise got java memory heap errors when trying to export to CMO3"
+	* https://fixupx.com/thesillydarku/status/2102974212952707294
 
 ## Artwork Import
 * We need to properly handle different blending mode imports from artwork to setup the drawables automatically.
-
-## Read/Write Filing Handling
-* Save should be muted/disabled in the menu if the document is not dirty.
-
-## UI Dialog
-* Still not sizing properly for short messages.  "Could not open EricaTEST.uma."
+* Automatic visual matching of imported artwork layers to layers cut from a texture atlas after a MOC3 to CMO3 conversion.
 
 ## Puppet Model, CMO3, MOC3
 * Parameter Repeat
@@ -72,16 +66,18 @@ I should fix the naming so that origin is X and Z in the code.  Z up, Y forward.
 	* Mirror along X/Z axis, mirror with 2D cursor as the axis.  Note: This is a small divergence to Blender's style.  In Blender there is an origin for each object that can be moved to different places.  Umamo still has the centroid origin calculated, but no way to move it or even if it was moved, a way to store it.
 	* Extrude(E) - Extrude an edge creates triangle cut quad automatically.
 
-## Sources Space
-* Improvements
-	* Hover to show thumbnail of layer, reuse thumbnailer.
+## Long Running Task Indicator
+* Atlas Repack, Import, Export, Save, Open
+* Place it right aligned of the workspace tabs.
+* Right now the status bar notice can get nuked when clicking around or potentially be cut off.
+* It's a third notice area essentially.
+* Before building, research if it would be better to have blocking notices in the status bar.
 
 ## Texture Authoring/UV Editor
 * Follow Selection Header Control - Split it into options and images.
 	* New custom image selection control.  This will also be an entry point for adding artwork.
 	* Support renaming images.
 * Improvements
-	* Add tooltip for properties_field_source_layer_display.
 	* Long running atlas packing should have a progress visible in the status bar.  We can also reuse this for other operations such as file open/import/export.
 * Bugs
 	* When relinking EricaTamamo.psd in EricaTamamo.cmo3 it results in some layers getting fringe artifacts like what was experienced in the past.
@@ -105,18 +101,15 @@ I should fix the naming so that origin is X and Z in the code.  Z up, Y forward.
 ## Shortcuts
 https://hollisbrown.github.io/blendershortcuts/ - I should make a page like this demonstrating the shortcuts for Umamo.
 
-## Snapshot/Image Export
-* Add the ability to take a snapshot of the current 2D viewport with transparency.
-	* This would also help with the UMA format thumbnail.  The UMA thumbnail is based on the part/drawable thumbnailer which does basic blending and does not respect any settings.
-
 ## Properties Panel
 * The document-level **runtime-compatibility target data model** behind Document › Runtime — the enabled export targets (Cubism, Ayagami, …) + each target's options, how it persists on the document, and how it drives CMO3/MOC3 export. Scaffolded as a placeholder section now; its data design is a separate pass (depends on cataloguing each target runtime's capabilities).
 * UMA serialization of the latent composite (the format work this unblocks).
 * Improvements
 	* Parts and deformers still have no editable transform — needs the deformer → part → mesh cascade.
 	* Do another pass on the keyed parameter/property highlight colors.  Why does off key filled color appear as grey over green?
-	* Transform Position and Size should update the render while scrubbing.
+	* Transform Position and Size should update the render while scrubbing.  They should also show the rest pose data after changing to edit mode.
 	* Aspect locked properties(Size) should update the other control while one is being scrubbed.
+* Changing keyed properties outside of object mode: QA testing to determine if this breaks anything.
 * Single/multiple relation pickers.
 	* Improvements
 		* Persist list height.(Stored in UMA format, maybe?)
@@ -126,6 +119,9 @@ https://hollisbrown.github.io/blendershortcuts/ - I should make a page like this
 ## Parameters
 * Parameter templates:
 	* Need a way to apply these without having to do a fresh import.
+* Parameters Area Improvements
+	* Snap to key on the parameter scrubber, either by the context menu or a snapping option.  The keyform sheet can do this right by clicking on a parameter pip.
+		* I'm leaning towards a snapping option in the area header, but the header is a bit crowded right now.
 
 ## Menus
 * Clicking again should close instead of reopen the menu.
@@ -146,24 +142,15 @@ https://hollisbrown.github.io/blendershortcuts/ - I should make a page like this
 * Automatic Backup
 
 ### UMA (Native File Format)
+* Improvements
+	* Preview thumbnail should take a snapshot of the 2D space and not from the part thumbnailer.  The part thumbnail does not respect visbility and so on.
+	* Format icon helper - Display thumbnail as the icon with the Umamo logo overlaid.  Requires an installer.
+
 See the roadmap: docs/plan/art-sourcing-pipeline.md § Phase G — the source-agnostic container is designed there.
 See format planning document: docs/plan/uma-format.md
 
-Format Goals:
-* Forwards compatible - Newer editors should be able to open older version files and upgrade as necessary.
-* Best effort backwards compatible - Older editors should be able to open newer version files and not crash on unknown data.
-* Extensible - Eventually physics and animation will make it into the format.  Both of those not part of the base puppet model, but features that interacts with it driving parameters and properties.
-* Has to store atlas textures, individual layer textures.  They are all just textures.  Possibly having an "isAtlas" flag would only be data reference purposes and not treating the underlying image differently.
-* Data structures should be marked with file version and/or sub-versions.
-* Storage of editor state: Collapsed/expanded sections in different panels, tracking visibility, etc.
-
 ## Import
-Initial import and setup of art into a puppet.  Realistically, editor controls need to exist first.  There are test CMO3 files to work with to get editor controls going.
 * MOC3 sidecar discovery on Android.  MOC3 might be a desktop only feature.
-
-## Reimport
-* Detection of edited source art files when application reacquires focus.
-* (Might not be appropriate for the reimport module, but has to be reusable across every platform.) Detection of the user trying to change the source art file format(PSD -> KRA) should warn that it is destructive since layer matching heuristics are not perfect and could result in orphaned layer data.  Later on having a dialog to manually remap these layers would be nice.  A dailog for manually remapping will be needed eventually for when layer matching heuristics file even when reimporting the same source art file format.
 
 ## Render
 * GPU glue: multi-pair seam vertices — latent correctness gap; see Claude Notes § GPU glue: multi-pair seam vertices.
@@ -171,12 +158,7 @@ Initial import and setup of art into a puppet.  Realistically, editor controls n
 ## Glue
 * Glue intensity is keyable but has no Properties home(glue is not selectable).  See Claude Notes § Glue intensity has no editable home.
 
-## Outliner
-* Deferred
-	* When the native UMA format exists we can track open/closed branches.  Cubism/CMO3 does not track this and it is all collapsed by default.
-
 ## UI
-* The placeholder checkerboard(EmptyViewportBackdrop) could just be the renderer showing the viewport without a model loaded.  It's fine as a placeholder for now.
 * Viewport view styles - Top right, in the header area.
 * Viewport loading overlay and mouse busy pointer.
 * AreaHeader/Viewport2DHeaderControls
@@ -190,23 +172,28 @@ Initial import and setup of art into a puppet.  Realistically, editor controls n
 * Ability to edit ALL the theme colors (the UmamoColors palette) for a custom look through preferences.  For example, in Blender I make my vertex colors as ff00ec(unselected), ff7a00(selected), and 7de400(active selection) since it is easier for me to see.
 	* The color-blind-assist first pass — vertex/edge/face gizmo colors plus the selection highlight — already exists in Settings > Colors.
 
+## Refactor
+* module/ui/src/commonMain/kotlin/org/umamo/ui/workspace/shell/EditorShell.kt
+* `OutlinerSpace.kt`(The pure helpers sit naturally beside `OutlinerTree.kt`.), `KeyformSheetSpace.kt`(About 175 lines of pure selection and marquee math.), `SourcesSpace.kt`(The relink UI and the tested pure logic.), `EditorShell.kt`, and `ViewportEditGizmoOverlay.kt`.
+
+## DRY/Standardization
+* Fields like PropertyFieldRow need to take a key use use that to get the correct resource key automatically instead of passing it.
+	* For Example: properties_field_base_angle - "base_angle" -> Expanded out to `properties_field_base_angle` and `properties_field_base_angle_description`.
+	* There are plenty of places in the code base that are passing the values around like this at the moment.  Difficulty: .* import level maybe?  I need to read up on the Kotlin compiler optimization to determine if this will be an issue.
+	* operatorParameterDescriptionRes also is the start of something of what I am thinking, but hardcoded.
+
 ## Settings
-* Settings Window - Curated settings.  Not everything from the settings.json can be exposed.  So each tab/section will be manually built.
 * Keybinding - input.keybinding (Includes keyboard, mouse, and pen buttons.)
 * Pen Binding (JPen, Wacom) - input.pen (Includes pen, pressure, and things related to the radial menu.)
-* New Startup Settings Screen
-	* Import from pervious version.
-	* Select from binding defaults.
-	* Theme Selection
-	* Language Selection (With universal emoji icon.) - Detect from system.
+* Quick Setup
+	* Versioned Settings
+	* Import from Previous
 * The settings UI needs a design pass since it is basically just squares and whatever thrown together right now.
 * New Settings
-	* Setting to make ALT+Click the default to activate the popup overlap picker.
+	* Setting to make Left Click, instead of ALT+Left Click, the default to activate the popup overlap picker.
 
 ## Keybindings
 * Audit default keybinding maps for Blender and Cubism styles.
-
-## Storage
 
 ## Future Feature Wishes
 * Pose Reference - A poseable and adjustable 3D mannequin model for overlay reference.
@@ -216,12 +203,15 @@ Initial import and setup of art into a puppet.  Realistically, editor controls n
 * History playback for proof of work.  The history system is there, but that is a lot of track over a long session.  So capture a snapshot every time period or number of snapshots.
 * A proper bone skeleton system with bendy bones.
 
+## Rights Management
+* One time, permanently dismissable message dialog informing users to not edit MOC3 files without permission from the author.
+
 ## Build and Distribute
 * Eventually get installers, signing, and automatic updates setup.
 
 ## MacOS
 * Zoom with the touchpad on my 2014 Macbook Pro is glitchy.  It will jump around and even go the wrong direction.
-* Need to add back a light native menu so it does not say "MainKt" all the time.
+* Can't quit from the native menu or CMD+Q.
 
 ## Input
 
@@ -236,8 +226,6 @@ Sketch:
 
 ## Command Palette
 * Icons for commands - Long tail feature, would need to add a lot of icons.  We can reuse the existing icons for current commands such as editor/select modes.
-* Improvements
-	* Now that the hovered area is tracked everywhere we can filter by what commands are available per area.
 
 ## Status Bar
 * The first iteration to improve the status bar hints was a good success.  Eventually:
@@ -252,28 +240,6 @@ Right now the goal is to support sRGB from ingest to output with full correctnes
 
 
 # Claude Notes
-
-## Added artwork placement (shipped 2026-09-22) and what a CMO3 round trip loses
-
-**What.** A later artwork file is placed on the rig's canvas by the add-artwork strip's Align (nine anchors)
-and Offset X / Z rows, seeded by `import.alignment`; the resulting offset is persisted per source
-(`ArtSource.offsetX/Z`, UMA §6.2; x right and z UP like the viewport, so the placement math negates z into canvas y) and every disk read of a listed file is placed by it before the model sees the
-art (`readListedArtworkAt`), so reload, relink, and match compare the file against the inventory in one frame.
-The Sources label takes the offset back out so its numbers match the art program.  This closes the
-"compare centers" TODO line above under Texture Authoring/UV Editor.
-
-**Known open: a CMO3 export carries no offset.**  A document reopened from the export reads every file at
-offset 0 while its rows are still in the document frame; the next disk reload of a placed file then sees every
-layer as moved (untouched quads jump to the unplaced position, edited meshes keep their positions but their
-UVs slide by the offset and are flagged outgrown).  A same-size file, the common outfit workflow, has offset 0
-and is unaffected.  Fix sketch for a format cycle: write `boundsOnImageDoc` in the file's own frame, keep
-`_materialLocalToCanvasTransform` in the document frame, and have ingest recover the offset from their
-difference - needs checking against the official editor, as does whether it accepts the negative
-`boundsOnImageDoc` a file larger than the canvas now exports.
-
-**Follow-up.** "Expand Canvas to Fit" (and an anchor-aware canvas resize in Properties) needs a whole-rig
-translate op that shifts drawable bases, deformer geometry, the world origin, and every source offset; sketched
-in `docs/plan/maintenance-2026-09.md` § Backlog.
 
 ## GPU glue: multi-pair seam vertices (deferred 2026-06-21)
 

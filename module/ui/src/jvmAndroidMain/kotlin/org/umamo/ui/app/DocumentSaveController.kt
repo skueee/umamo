@@ -3,15 +3,19 @@ package org.umamo.ui.app
 import io.github.vinceglb.filekit.absolutePath
 import io.github.vinceglb.filekit.name
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import org.umamo.edit.NoticePlacement
 import org.umamo.format.FileKind
+import org.umamo.format.raster.RasterImage
 import org.umamo.format.uma.UmaModel
+import org.umamo.render.FrameBackdrop
 import org.umamo.storage.UmamoLog
 import org.umamo.storage.platformFileFromSavedPath
 import org.umamo.ui.document.Cmo3Document
 import org.umamo.ui.document.Moc3Document
 import org.umamo.ui.document.PuppetDocument
+import org.umamo.ui.document.UMA_THUMBNAIL_SIZE
 import org.umamo.ui.document.UmaWriteOutcome
 import org.umamo.ui.document.addRecentFile
 import org.umamo.ui.document.fileDisplayName
@@ -19,11 +23,18 @@ import org.umamo.ui.document.umamoWriterInfo
 import org.umamo.ui.document.writeUmaDocument
 import org.umamo.ui.resources.Res
 import org.umamo.ui.resources.alert_save_failed
+import org.umamo.ui.viewport.fitSquare
 import org.umamo.ui.workspace.AlertRequest
-import org.umamo.ui.workspace.EDITOR_STATE_AREAS
-import org.umamo.ui.workspace.EDITOR_STATE_SESSION
 import org.umamo.ui.workspace.commands.DirtyDocumentPrompt
-import org.umamo.ui.workspace.sessionStateJson
+import org.umamo.ui.workspace.editorstate.EDITOR_STATE_AREAS
+import org.umamo.ui.workspace.editorstate.EDITOR_STATE_SESSION
+import org.umamo.ui.workspace.editorstate.sessionStateJson
+
+/**
+ * How long a save waits for the renderer to draw its thumbnail before compositing one itself.  A capture
+ * this small takes a frame or two; the wait only matters when the render thread is stuck.
+ */
+private const val THUMBNAIL_RENDER_TIMEOUT_MILLIS = 5_000L
 
 /**
  * Save and Save As, and the two gates that stand in front of anything that would discard the session:
@@ -75,7 +86,7 @@ internal class DocumentSaveController(
 			return
 		}
 		// Kept on the holder as the save in flight, so a quit or a document replace asked for meanwhile waits
-		// for it instead of racing it (afterPendingSave below); it completes true only when the file landed.
+		// for it instead of racing it (afterPendingWrites below); it completes true only when the file landed.
 		file.saveJob =
 			services.scope.async {
 				val knownPath = file.umaPath
@@ -92,7 +103,7 @@ internal class DocumentSaveController(
 				// change to the document (UMA §7).
 				val editorState =
 					buildJsonObject {
-						put(EDITOR_STATE_AREAS, context.areaViewStates.gather())
+						put(EDITOR_STATE_AREAS, context.areaViewStates.gather(context.viewport.service?.cameras().orEmpty()))
 						put(EDITOR_STATE_SESSION, sessionStateJson(activeSession.viewState(), activeSession.pose.value, snapshot))
 					}
 				val base = file.base ?: UmaModel.create(umamoWriterInfo())
@@ -100,7 +111,7 @@ internal class DocumentSaveController(
 				activeSession.emitNotice("notice.document.saving", NoticePlacement.StatusBar)
 				val outcome =
 					try {
-						writeUmaDocument(puppet.document, base, snapshot, binding, editorState, destination)
+						writeUmaDocument(puppet.document, base, snapshot, binding, editorState, destination, renderedThumbnail(context.viewport))
 					} finally {
 						file.saving = false
 					}
@@ -143,26 +154,59 @@ internal class DocumentSaveController(
 	}
 
 	/**
-	 * Runs [action] once no save is being written.  A save still in flight settles before anything that
-	 * would end the process or replace the document: the write runs on a thread the process does not wait
-	 * for, so a quit that went ahead mid-save would kill it - and a clean document (an import never edited)
-	 * has nothing unsaved to stop the quit with.  Waiting also keeps the unsaved-changes prompt from
-	 * appearing over a running save, where its Save button could only answer that one is in progress.
+	 * The saved thumbnail as the viewport renderer draws it (UMA §5.6): the pose on screen, the drawables the
+	 * editor shows, blended, masked, and colored as the viewport has them, fitted into the square over
+	 * transparency.
+	 *
+	 * The render thread draws its own latest model, which can trail the snapshot this save writes by a frame; a
+	 * thumbnail is a picture of the document, and a frame's lag does not change what it shows.
+	 *
+	 * @param DocumentViewportSlot viewport Where the document's render service is.
+	 * @return RasterImage? The thumbnail, or null when there is no renderer, nothing is shown, or the render did
+	 *   not come back in time - the writer then composites one itself.
+	 */
+	private suspend fun renderedThumbnail(viewport: DocumentViewportSlot): RasterImage? {
+		val service = viewport.service ?: return null
+		val bounds = service.visibleContentBounds() ?: return null
+		val thumbnail =
+			withTimeoutOrNull(THUMBNAIL_RENDER_TIMEOUT_MILLIS) {
+				service.renderImage(fitSquare(bounds, UMA_THUMBNAIL_SIZE), FrameBackdrop.Transparent)
+			}
+		if (thumbnail == null) {
+			UmamoLog.warn("save: the renderer did not draw the thumbnail; compositing it instead")
+		}
+		return thumbnail
+	}
+
+	/**
+	 * Runs [action] once no save or model export is being written.  Either one still in flight settles before
+	 * anything that would end the process or replace the document: the write runs on a thread the process does
+	 * not wait for, so a quit that went ahead mid-write would kill it - and a clean document (an import never
+	 * edited) has nothing unsaved to stop the quit with.  A replace that went ahead mid-export would also keep
+	 * the old document resident under the export while the new one loads beside it.  Waiting also keeps the
+	 * unsaved-changes prompt from appearing over a running save, where its Save button could only answer that
+	 * one is in progress.
+	 *
+	 * This is the early wait, before the prompt.  An export started after it - while the prompt is up, a save is
+	 * written, or a document loads - is waited for again where the exit or the swap actually happens
+	 * ([EditorAppServices.afterRunningExport]).
 	 *
 	 * @param Function action What to do once nothing is being written.
 	 */
-	private fun afterPendingSave(action: () -> Unit) {
-		val context = services.current()
-		val file = context.file
-		if (file == null) {
-			action()
-			return
+	private fun afterPendingWrites(action: () -> Unit) {
+		services.afterRunningExport {
+			val context = services.current()
+			val file = context.file
+			if (file == null) {
+				action()
+				return@afterRunningExport
+			}
+			file.afterPendingSave(
+				services.scope,
+				onWaiting = { context.session?.emitNotice("notice.document.waitingForSave", NoticePlacement.StatusBar) },
+				action = action,
+			)
 		}
-		file.afterPendingSave(
-			services.scope,
-			onWaiting = { context.session?.emitNotice("notice.document.waitingForSave", NoticePlacement.StatusBar) },
-			action = action,
-		)
 	}
 
 	/**
@@ -187,7 +231,7 @@ internal class DocumentSaveController(
 	 * @param Function proceed Replaces the document.
 	 */
 	fun confirmIfDirty(proceed: () -> Unit) {
-		afterPendingSave {
+		afterPendingWrites {
 			if (services.current().session?.dirty?.value == true) {
 				services.commandRegistry.invoke("document.confirmReplace", dirtyDocumentPrompt(proceed))
 			} else {
@@ -199,16 +243,19 @@ internal class DocumentSaveController(
 	/**
 	 * Runs [exit], asking first when the document is dirty (document.confirmExit): quitting discards the
 	 * session the same way a replace does.  File > Exit calls this directly; the host's window close, OS
-	 * quit, and back gesture reach it through the exit guard.
+	 * quit, and back gesture reach it through the exit guard.  Whichever way the exit comes - at once, after
+	 * Don't Save, or after a save lands - it waits for a model export started meanwhile, so the process never
+	 * ends with an export half written.
 	 *
 	 * @param Function exit Closes the application.
 	 */
 	fun confirmExit(exit: () -> Unit) {
-		afterPendingSave {
+		val exitWhenIdle = { services.afterRunningExport(exit) }
+		afterPendingWrites {
 			if (services.current().session?.dirty?.value == true) {
-				services.commandRegistry.invoke("document.confirmExit", dirtyDocumentPrompt(exit))
+				services.commandRegistry.invoke("document.confirmExit", dirtyDocumentPrompt(exitWhenIdle))
 			} else {
-				exit()
+				exitWhenIdle()
 			}
 		}
 	}

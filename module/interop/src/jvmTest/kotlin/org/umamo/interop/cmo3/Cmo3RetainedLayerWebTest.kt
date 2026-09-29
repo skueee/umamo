@@ -7,14 +7,18 @@ import org.umamo.format.cmo3.caff.CaffCodec
 import org.umamo.format.cmo3.model.custom.CImageResource
 import org.umamo.format.cmo3.model.custom.CModelImage
 import org.umamo.format.cmo3.model.custom.CModelSource
+import org.umamo.format.cmo3.model.custom.CSize
 import org.umamo.format.cmo3.model.custom.CWritableImage
 import org.umamo.format.cmo3.model.gen.CArtMeshSource
+import org.umamo.format.cmo3.model.gen.CCachedImage
+import org.umamo.format.cmo3.model.gen.CCachedImageManager
 import org.umamo.format.cmo3.model.gen.CDrawableSourceSet
 import org.umamo.format.cmo3.model.gen.CImageIcon
 import org.umamo.format.cmo3.model.gen.CLayeredImage
 import org.umamo.format.cmo3.model.gen.CModelImageGroup
 import org.umamo.format.cmo3.model.gen.CTextureAtlas
 import org.umamo.format.cmo3.model.gen.CTextureManager
+import org.umamo.format.cmo3.model.gen.GTexture2D
 import org.umamo.format.cmo3.model.gen.GTransform2
 import org.umamo.format.cmo3.model.gen.LayeredImageWrapper
 import org.umamo.format.cmo3.model.gen.ModelImageEntry
@@ -47,6 +51,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -99,7 +104,7 @@ class Cmo3RetainedLayerWebTest {
 				canvasWidth = 100f,
 				canvasHeight = 100f,
 				worldOriginX = 50f,
-				worldOriginY = -50f,
+				worldOriginZ = -50f,
 				runtimeTarget = RuntimeTarget.Cubism53,
 				atlas = PuppetAtlas(pages = listOf(AtlasPage(pageSize, pageSize)), tiles = listOf(tileEye, tileHair)),
 				sources = listOf(ArtSource(sourceA, "a.psd", "/art/a.psd", "psd", listOf(row("lyid:1576", "Eye", "Head/Eyes", 10, 20), row("lyid:5", "Hair", "", 30, 40)), contentHash = null, lastModified = 123L)),
@@ -275,6 +280,175 @@ class Cmo3RetainedLayerWebTest {
 		for (drawable in edited.drawables) {
 			val back = assertNotNull(reimported.drawables.firstOrNull { candidate -> candidate.id == drawable.id }, "${drawable.name} re-imports")
 			assertContentEquals(drawable.mesh?.uvs, back.mesh?.uvs, "${drawable.name} uvs are verbatim")
+		}
+	}
+
+	/** The hair drawable's coordinates in its art's own frame, before the reduced copy's scale. */
+	private val hairArtUvs = floatArrayOf(0.1f, 0.1f, 0.9f, 0.1f, 0.9f, 0.9f, 0.1f, 0.9f)
+
+	/**
+	 * Recasts the retained graph's hair the way an editor model saved in combined-layer display holds its
+	 * art: its own texture over a reduced cache copy of its model image (the 4px raster padded to 64 and
+	 * halved), carrying the raster-to-cache scale, with its coordinates in the copy's frame.  Written and
+	 * read back, like a file the editor saved.
+	 *
+	 * @param Cmo3Model retained The retained graph.
+	 * @param AtlasTile hairTile The hair's tile, whose guid names its model image.
+	 * @return Pair The re-read model and the copy's archive path.
+	 */
+	private fun withHairOverAReducedCopy(retained: Cmo3Model, hairTile: AtlasTile): Pair<Cmo3Model, String> {
+		val root = retained.root as CModelSource
+		val textureManager = root.textureManager as CTextureManager
+		val hairImage =
+			Cmo3Import.elementsOf(textureManager._modelImageGroups).filterIsInstance<CModelImageGroup>()
+				.flatMap { group -> Cmo3Import.elementsOf(group._modelImages).filterIsInstance<CModelImage>() }
+				.first { modelImage -> Cmo3Import.uuidOf(modelImage.guid) == hairTile.id.raw }
+		val copyPath = retained.nextImageFileBufPath()
+		val copyPng = PngCodec.write(RasterImage(32, 32, ByteArray(32 * 32 * 4) { 0x22 }))
+		val copy = Cmo3ImageChainBuilder.pageImageResource(copyPath, 32, 32, copyPng.size)
+		retained.addLayerPng(copy, copyPng)
+		val manager = hairImage.cachedImageManager as CCachedImageManager
+		manager.cachedImages =
+			ArrayList<Any?>(
+				Cmo3Import.elementsOf(manager.cachedImages) +
+					CCachedImage().apply {
+						_cachedImageResource = copy
+						isSharedImage = false
+						rawImageSize =
+							CSize().apply {
+								width = 4
+								height = 4
+							}
+						reductionRatio = 2
+						mipmapLevel = 32
+						transformRawImageToCachedImage =
+							CAffine().apply {
+								m00 = 0.5f
+								m11 = 0.5f
+							}
+					},
+			)
+		val hairMesh = meshesOf(root).first { mesh -> Cmo3Import.idStrOf(mesh.id) == "Hair" }
+		hairMesh.texture =
+			Cmo3ImageChainBuilder.pageTexture("Hair", copy).apply {
+				transformImageResource01toLogical01 = Cmo3ImageChainBuilder.paddedFrameAffine(4, 4)
+				mipmapLevel = 32
+			}
+		val scale = Cmo3ImageChainBuilder.paddedFrameAffine(4, 4)
+		hairMesh.uvs = FloatArray(hairArtUvs.size) { componentIndex -> hairArtUvs[componentIndex] * if (componentIndex % 2 == 0) scale.m00 else scale.m11 }
+		return Cmo3.read(Cmo3.write(retained)) to copyPath
+	}
+
+	@Test
+	fun aReloadMovesDrawablesOffTheReducedCopyOntoTheNewRaster() {
+		val (fixture, fixtureBaseline) = retainedGraph()
+		val (retained, copyPath) = withHairOverAReducedCopy(fixture, fixtureBaseline.atlas.tiles.first { tile -> tile.source?.layerKey == "lyid:5" })
+		val baseline = Cmo3Import.fromModelSource(retained.root as CModelSource)
+		val hairTile = baseline.atlas.tiles.first { tile -> tile.source?.layerKey == "lyid:5" }
+		val hair = baseline.drawables.first { drawable -> drawable.id.raw == "Hair" }
+		// The hair's tile is placed, so the import reads it out of the copy's frame and onto the page: tile
+		// pixel (x, y) sits at page pixel (8 + x, 2 + y) of the 16px page.
+		for (componentIndex in hairArtUvs.indices) {
+			val expected = if (componentIndex % 2 == 0) (8f + hairArtUvs[componentIndex] * 4f) / pageSize else (2f + hairArtUvs[componentIndex] * 4f) / pageSize
+			assertEquals(expected, hair.mesh!!.uvs[componentIndex], 1e-6f, "the import reads the copy's frame onto the hair's page")
+		}
+
+		// A reload of the hair, repainted at 6x6.
+		val hairReloaded = AtlasTile(reloadTileId(hairTile.id, baseline.atlas.tiles.mapTo(HashSet()) { tile -> tile.id }), "Hair", 6, 6, placement = AtlasPlacement(0, 8f, 2f, 1f, 1f, 0f), source = hairTile.source, replaces = hairTile.id)
+		val retainedSource = baseline.sources.single()
+		val edited =
+			baseline.copy(
+				drawables = baseline.drawables.map { drawable -> if (drawable.id == hair.id) drawable.copy(atlasTileId = hairReloaded.id) else drawable },
+				atlas = baseline.atlas.copy(tiles = baseline.atlas.tiles.map { tile -> if (tile.id == hairTile.id) hairReloaded else tile }),
+				sources = listOf(retainedSource.copy(layers = retainedSource.layers.map { layer -> if (layer.key == "lyid:5") layer.copy(width = 6, height = 6) else layer })),
+			)
+		val report = Cmo3Export.apply(edited, retained, recomposedPages = listOf(page), tileRasters = { tileId -> if (tileId == hairReloaded.id) gradient(6, 31) else null }, nowMillis = now)
+		assertTrue(report.notices.isEmpty(), "the reconcile owes nothing: ${report.notices}")
+
+		val reread = Cmo3.read(Cmo3.write(retained))
+		val root = reread.root as CModelSource
+		val hairImage =
+			Cmo3Import.elementsOf((root.textureManager as CTextureManager)._modelImageGroups).filterIsInstance<CModelImageGroup>()
+				.flatMap { group -> Cmo3Import.elementsOf(group._modelImages).filterIsInstance<CModelImage>() }
+				.first { modelImage -> Cmo3Import.uuidOf(modelImage.guid) == hairTile.id.raw }
+		val hairMesh = meshesOf(root).first { mesh -> Cmo3Import.idStrOf(mesh.id) == "Hair" }
+		val texture = hairMesh.texture as GTexture2D
+		assertSame(hairImage._filteredImage, texture.srcImageResource, "the hair samples its model image's new raster, not the copy")
+		val scale = texture.transformImageResource01toLogical01 as CAffine
+		assertEquals(listOf(6f / 64f, 0f, 0f, 0f, 6f / 64f, 0f), listOf(scale.m00, scale.m01, scale.m02, scale.m10, scale.m11, scale.m12), "with the new size's cache scale")
+		assertEquals(Cmo3ImageChainBuilder.FULL_RESOLUTION_MIPMAP_LEVEL, texture.mipmapLevel)
+		// A packed drawable over its raster stores the raster's frame: the edited page coordinates off the
+		// reloaded 6px tile's placement.
+		val storedAfter = hairMesh.uvs as FloatArray
+		for (componentIndex in storedAfter.indices) {
+			val pageCoordinate = hair.mesh!!.uvs[componentIndex] * pageSize
+			val expected = if (componentIndex % 2 == 0) (pageCoordinate - 8f) / 6f else (pageCoordinate - 2f) / 6f
+			assertEquals(expected, storedAfter[componentIndex], 1e-5f, "the hair stores its new raster's frame at component $componentIndex")
+		}
+		val reimportedHair = Cmo3Import.fromModelSource(root).drawables.first { drawable -> drawable.id == hair.id }
+		for (componentIndex in storedAfter.indices) {
+			assertEquals(hair.mesh!!.uvs[componentIndex], reimportedHair.mesh!!.uvs[componentIndex], 1e-6f, "and re-imports to the page coordinates it was edited with")
+		}
+
+		// The copy is gone from the graph and the archive; the eye still samples the page.
+		assertNull(reread.archive.byPath(copyPath), "the copy's pixels are removed")
+		val cachedResources =
+			Cmo3Import.elementsOf((hairImage.cachedImageManager as CCachedImageManager).cachedImages).filterIsInstance<CCachedImage>().map { cached -> cached._cachedImageResource as? CImageResource }
+		assertTrue(cachedResources.none { resource -> resource?.imageFileBuf?.archivePath == copyPath }, "no cache names the copy")
+		assertTrue(meshesOf(root).none { mesh -> ((mesh.texture as? GTexture2D)?.srcImageResource as? CImageResource)?.imageFileBuf?.archivePath == copyPath }, "no texture names the copy")
+		val eyeMesh = meshesOf(root).first { mesh -> Cmo3Import.idStrOf(mesh.id) == "EyeL" }
+		val pageResource = (Cmo3Import.elementsOf((root.textureManager as CTextureManager)._textureAtlases).filterIsInstance<CTextureAtlas>().single().cachedAtlasImage)
+		assertSame(pageResource, (eyeMesh.texture as GTexture2D).srcImageResource, "the eye is untouched")
+	}
+
+	/**
+	 * The eye reloaded repainted in place: the same size, the same spot on the page and on the canvas, and
+	 * its drawable carried onto the replacement - so only the pixels differ from the retained graph.
+	 *
+	 * @param PuppetModel baseline The retained graph's import.
+	 * @return Pair The edited model and the eye's replacement tile.
+	 */
+	private fun eyeRepaintedInPlace(baseline: PuppetModel): Pair<PuppetModel, AtlasTile> {
+		val eyeTile = baseline.atlas.tiles.first { tile -> tile.source?.layerKey == "lyid:1576" }
+		val eyeReloaded = eyeTile.copy(id = reloadTileId(eyeTile.id, baseline.atlas.tiles.mapTo(HashSet()) { tile -> tile.id }), replaces = eyeTile.id)
+		val edited =
+			baseline.copy(
+				drawables = baseline.drawables.map { drawable -> if (drawable.id.raw == "EyeL") drawable.copy(atlasTileId = eyeReloaded.id) else drawable },
+				atlas = baseline.atlas.copy(tiles = baseline.atlas.tiles.map { tile -> if (tile.id == eyeTile.id) eyeReloaded else tile }),
+			)
+		return edited to eyeReloaded
+	}
+
+	@Test
+	fun aReloadThatKeepsItsSizeAndPlaceStillRewritesTheLayer() {
+		val (retained, baseline) = retainedGraph()
+		val (edited, eyeReloaded) = eyeRepaintedInPlace(baseline)
+		val repainted = gradient(4, 31)
+
+		val report = Cmo3Export.apply(edited, retained, recomposedPages = listOf(page), tileRasters = { tileId -> if (tileId == eyeReloaded.id) repainted else null }, nowMillis = now)
+		assertTrue(report.notices.isEmpty(), "the repaint is written, not owed: ${report.notices}")
+
+		val reread = Cmo3.read(Cmo3.write(retained))
+		val art = assertNotNull(cmo3SourceArtOf(reread.root as CModelSource, baseline.sources.single().id) { resource -> reread.extractLayerPng(resource) })
+		assertContentEquals(repainted.rgba, assertNotNull(art.layers.firstOrNull { layer -> layer.id.raw == "lyid:1576" }).raster.rgba, "the eye's layer holds the repainted pixels")
+		assertContentEquals(gradient(4, 2).rgba, assertNotNull(art.layers.firstOrNull { layer -> layer.id.raw == "lyid:5" }).raster.rgba, "the hair keeps its own")
+	}
+
+	@Test
+	fun aRepaintTheWebCannotWriteIsReportedRatherThanDropped() {
+		val (retained, baseline) = retainedGraph()
+		val (edited, _) = eyeRepaintedInPlace(baseline)
+		val entriesBefore = retained.archive.entries.map { entry -> entry.path to entry.content.copyOf() }
+
+		// No pixels for the replacement: the web declines, so the retained layer keeps the old art.
+		val report = Cmo3Export.apply(edited, retained, recomposedPages = listOf(page), tileRasters = { null }, nowMillis = now)
+
+		val reasons = report.notices.filterIsInstance<ExportNotice.UnsupportedChange>().map { notice -> notice.reason }
+		assertEquals(listOf<ExportNoticeReason>(ExportNoticeReason.AtlasTileMetadataNotReconcilable), reasons, "the unwritten repaint is owed, once: ${report.notices}")
+		for ((path, content) in entriesBefore) {
+			if (path.startsWith("imageFileBuf")) {
+				assertContentEquals(content, assertNotNull(retained.archive.byPath(path)).content, "layer '$path' is untouched")
+			}
 		}
 	}
 

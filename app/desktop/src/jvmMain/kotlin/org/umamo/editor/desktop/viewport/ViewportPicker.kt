@@ -8,7 +8,7 @@ import org.umamo.render.pick.drawableCentroids
 import org.umamo.render.pick.pickAllDrawables
 import org.umamo.render.pick.pickDrawable
 import org.umamo.render.pick.screenToWorldX
-import org.umamo.render.pick.screenToWorldY
+import org.umamo.render.pick.screenToWorldZ
 import org.umamo.render.puppet.PuppetRenderer
 import org.umamo.runtime.model.DrawableId
 import org.umamo.runtime.model.PuppetModel
@@ -18,7 +18,7 @@ import org.umamo.runtime.model.partNameByDrawable
 import org.umamo.runtime.model.pickableIndicesByDrawable
 import org.umamo.runtime.model.pickableUvsByDrawable
 import org.umamo.ui.model.DrawableThumbnailProvider
-import org.umamo.ui.model.DrawableThumbnailer
+import org.umamo.ui.model.thumbnails.DrawableThumbnailer
 
 /**
  * CPU-side hit-testing and art previews for the viewport, over the current deformed pose. Runs entirely on
@@ -114,10 +114,10 @@ internal class ViewportPicker(
 		val geometry = renderer.pickGeometry() ?: return null
 		// Screen (y-down) to world (y-up), the inverse of the camera's worldToNdc - see ScreenSpacePick.
 		val worldX = screenToWorldX(cursorXpx, camera, width)
-		val worldY = screenToWorldY(cursorYpx, camera, height)
+		val worldZ = screenToWorldZ(cursorYpx, camera, height)
 		return pickDrawable(
 			worldX,
-			worldY,
+			worldZ,
 			geometry.worldPositions,
 			pickableIndices,
 			pickableUvs,
@@ -149,10 +149,10 @@ internal class ViewportPicker(
 		}
 		val geometry = renderer.pickGeometry() ?: return emptyList()
 		val worldX = screenToWorldX(cursorXpx, camera, width)
-		val worldY = screenToWorldY(cursorYpx, camera, height)
+		val worldZ = screenToWorldZ(cursorYpx, camera, height)
 		return pickAllDrawables(
 			worldX,
-			worldY,
+			worldZ,
 			geometry.worldPositions,
 			pickableIndices,
 			pickableUvs,
@@ -218,6 +218,8 @@ internal class ViewportPicker(
 	 * The atlas-texel alpha (0..1) for a drawable at a full-atlas (u, v), or 1f when the drawable is
 	 * untextured (a flat draw color, treated as fully opaque). Reads the retained CPU atlas pixels; the
 	 * alpha byte is the coverage whether or not the atlas is premultiplied, so no un-premultiply is needed.
+	 * A point off the page is transparent, as the renderer draws it: a mesh overhangs its art, and when the
+	 * page is a single model image that overhang runs past the page itself.
 	 *
 	 * @param DrawableId id The drawable.
 	 * @param Float u The full-atlas U.
@@ -227,8 +229,11 @@ internal class ViewportPicker(
 	private fun sampleTexelAlpha(id: DrawableId, u: Float, v: Float): Float {
 		val atlasIndex = textures.atlasIndexByDrawableId[atlasKeyByDrawableId[id] ?: id.raw] ?: return 1f
 		val image = textures.atlases.getOrNull(atlasIndex) ?: return 1f
-		val px = (u * image.width).toInt().coerceIn(0, image.width - 1)
-		val py = (v * image.height).toInt().coerceIn(0, image.height - 1)
+		if (!(u >= 0f && u < 1f && v >= 0f && v < 1f)) {
+			return 0f
+		}
+		val px = (u * image.width).toInt().coerceAtMost(image.width - 1)
+		val py = (v * image.height).toInt().coerceAtMost(image.height - 1)
 		val alpha = image.rgba[(py * image.width + px) * 4 + 3].toInt() and 0xFF
 		return alpha / 255f
 	}

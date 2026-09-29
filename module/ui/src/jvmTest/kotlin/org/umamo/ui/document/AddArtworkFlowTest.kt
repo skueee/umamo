@@ -11,11 +11,11 @@ import org.umamo.interop.art.ArtSourceDescriptor
 import org.umamo.interop.art.SourceArtImportOptions
 import org.umamo.render.deriveAtlasTextures
 import org.umamo.runtime.model.ParameterNode
-import org.umamo.ui.model.AddArtworkRequest
-import org.umamo.ui.model.AtlasRepackHost
-import org.umamo.ui.model.ImportParameterKeys
 import org.umamo.ui.model.SessionAtlasPages
-import org.umamo.ui.model.runAddArtwork
+import org.umamo.ui.model.artwork.AddArtworkRequest
+import org.umamo.ui.model.artwork.ImportParameterKeys
+import org.umamo.ui.model.artwork.runAddArtwork
+import org.umamo.ui.model.repack.AtlasRepackHost
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -158,7 +158,7 @@ class AddArtworkFlowTest {
 			assertEquals(read.art.widthPx.toFloat(), seeded.canvasWidth, "the canvas is the file's")
 			assertEquals(read.art.heightPx.toFloat(), seeded.canvasHeight, "the canvas is the file's")
 			assertEquals(seeded.canvasWidth / 2f, seeded.worldOriginX, "the world origin is the canvas center")
-			assertEquals(-(seeded.canvasHeight / 2f), seeded.worldOriginY, "the world origin is the canvas center")
+			assertEquals(-(seeded.canvasHeight / 2f), seeded.worldOriginZ, "the world origin is the canvas center")
 			assertEquals(
 				ParameterTemplate.Humanoid.parameters.map { parameter -> parameter.id },
 				seeded.parameters.map { parameter -> parameter.id },
