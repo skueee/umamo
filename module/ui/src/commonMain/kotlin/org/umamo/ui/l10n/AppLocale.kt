@@ -30,7 +30,7 @@ const val FALLBACK_LOCALE_TAG: String = "en"
  * language's own name is identity, not chrome to translate, and it is what a rigger who cannot read the
  * current language looks for.
  */
-val UI_LANGUAGE_ENDONYMS: Map<String, String> = linkedMapOf("en" to "English", "ja" to "日本語", "ko" to "한국어")
+val UI_LANGUAGE_ENDONYMS: Map<String, String> = linkedMapOf("en" to "English", "ja" to "日本語", "ko" to "한국어", "fr" to "Français")
 
 /**
  * The operating system's preferred UI languages as BCP-47 tags, most preferred first; empty when the platform
